@@ -43,6 +43,8 @@ func (s ServiceStruct) ParseUserCredentials(r *http.Request) (model.User, error)
 	var user model.User
 	// проверить у запроса content-type = application/json
 	if r.Header.Get("Content-Type") != "application/json" {
+		contType := r.Header.Get("Content-Type")
+		s.Log.WithFields(logrus.Fields{"Content-Type": contType}).Error("Неверный Content-Type")
 		return model.User{}, model.ErrWrongRequest
 	}
 
@@ -54,6 +56,7 @@ func (s ServiceStruct) ParseUserCredentials(r *http.Request) (model.User, error)
 	}
 	// проверить, что логин и пароль не пустые
 	if user.Login == "" || user.Password == "" {
+		s.Log.Error(model.ErrWrongRequest.Error())
 		return model.User{}, model.ErrWrongRequest
 	}
 	return user, nil

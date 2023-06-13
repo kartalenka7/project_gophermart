@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/kartalenka7/project_gophermart/internal/model"
+	"github.com/sirupsen/logrus"
 )
 
 // интерфейс для взаимодействия с сервисом
@@ -20,7 +21,8 @@ type ServiceIntf interface {
 	WriteWithdraw(withdraw model.OrderWithdraw)
 }
 
-func (s *server) userRegstr(rw http.ResponseWriter, r *http.Request) {
+func (s server) userRegstr(rw http.ResponseWriter, r *http.Request) {
+	s.log.Info("Хэндлер регистрация пользователя")
 	// проверяем запрос, парсим логин и пароль
 	user, err := s.service.ParseUserCredentials(r)
 	if err != nil {
@@ -43,10 +45,12 @@ func (s *server) userRegstr(rw http.ResponseWriter, r *http.Request) {
 		Name:  "UserAuth",
 		Value: cookieVal}
 	r.AddCookie(&cookie)
+
+	s.log.WithFields(logrus.Fields{"cookie": cookieVal}).Info("Пользователь успешно зарегистрирован и авторизован")
 	rw.WriteHeader(http.StatusOK)
 }
 
-func (s *server) userAuth(rw http.ResponseWriter, r *http.Request) {
+func (s server) userAuth(rw http.ResponseWriter, r *http.Request) {
 	user, err := s.service.ParseUserCredentials(r)
 	if err != nil {
 		rw.WriteHeader(http.StatusBadRequest)
@@ -72,7 +76,7 @@ func (s *server) userAuth(rw http.ResponseWriter, r *http.Request) {
 	rw.WriteHeader(http.StatusOK)
 }
 
-func (s *server) addOrder(rw http.ResponseWriter, r *http.Request) {
+func (s server) addOrder(rw http.ResponseWriter, r *http.Request) {
 
 	// получить номер заказа из body
 	body, err := io.ReadAll(r.Body)
@@ -118,14 +122,14 @@ func (s *server) addOrder(rw http.ResponseWriter, r *http.Request) {
 	rw.WriteHeader(http.StatusAccepted)
 }
 
-func (s *server) getOrders(rw http.ResponseWriter, r *http.Request) {
+func (s server) getOrders(rw http.ResponseWriter, r *http.Request) {
 	var user model.User
 	// проверить авторизацию пользователя
 
 	s.service.GetUserOrders(user)
 }
 
-func (s *server) withdraw(rw http.ResponseWriter, r *http.Request) {
+func (s server) withdraw(rw http.ResponseWriter, r *http.Request) {
 	var withdraw model.OrderWithdraw
 	//проверить авторизацию пользователя
 
@@ -133,10 +137,10 @@ func (s *server) withdraw(rw http.ResponseWriter, r *http.Request) {
 	s.service.WriteWithdraw(withdraw)
 }
 
-func (s *server) getWithdrawals(rw http.ResponseWriter, r *http.Request) {
+func (s server) getWithdrawals(rw http.ResponseWriter, r *http.Request) {
 
 }
 
-func (s *server) getBalance(rw http.ResponseWriter, r *http.Request) {
+func (s server) getBalance(rw http.ResponseWriter, r *http.Request) {
 
 }

@@ -24,3 +24,4 @@ vendor/
 
 #log files
 cmd/gophermart/logrus.log
+tests/logrus.log

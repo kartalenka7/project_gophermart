@@ -24,9 +24,9 @@ var (
 							cookie   TEXT
 						)`
 	createOrdersTable = `CREATE TABLE IF NOT EXISTS
-						 orders(
+						 ordersTable(
 							number TEXT PRIMARY KEY,
-							user   TEXT,
+							cookie TEXT,
 							time   TEXT,
 							status TEXT
 						 )`
@@ -40,8 +40,8 @@ var (
 	insertUser = `INSERT INTO users(login, password, cookie) VALUES($1, $2, $3)`
 	selectUser = `SELECT password, cookie FROM users WHERE login = $1`
 
-	selectOrder = `SELECT user FROM orders WHERE number = $1`
-	insertOrder = `INSERT INTO orders(number, user, date) VALUES($1, $2, $3)`
+	selectOrder = `SELECT cookie FROM ordersTable WHERE number = $1`
+	insertOrder = `INSERT INTO ordersTable(number, cookie, date) VALUES($1, $2, $3)`
 )
 
 type DBStruct struct {
