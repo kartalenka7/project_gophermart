@@ -19,7 +19,7 @@ func NewRouter(service ServiceIntf, log *logrus.Logger) chi.Router {
 
 	// маршрутизация запросов
 	router.Route("/api/user", func(r chi.Router) {
-		//r.Use(gzipHandle)
+		r.Use(gzipHandle)
 		r.Post("/register", server.userRegstr)
 		r.Post("/login", server.userAuth)
 

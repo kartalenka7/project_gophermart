@@ -43,7 +43,7 @@ func TestUserRegstr(t *testing.T) {
 			method:  http.MethodPost,
 			request: "/api/user/register",
 			user: model.User{
-				Login:    "user2",
+				Login:    "user4",
 				Password: "1234",
 			},
 			want: want{
@@ -56,7 +56,7 @@ func TestUserRegstr(t *testing.T) {
 			method:  http.MethodPost,
 			request: "/api/user/register",
 			user: model.User{
-				Login:    "user2",
+				Login:    "user4",
 				Password: "1234",
 			},
 			want: want{
@@ -87,7 +87,8 @@ func TestUserRegstr(t *testing.T) {
 			buf := bytes.NewBuffer([]byte{})
 			encoder := json.NewEncoder(buf)
 			encoder.SetEscapeHTML(false)
-			encoder.Encode(tt.user)
+			err = encoder.Encode(tt.user)
+			require.NoError(t, err)
 			// создаем запрос
 			request, err := http.NewRequest(tt.method, ts.URL+tt.request, buf)
 			assert.NoError(t, err)
@@ -97,6 +98,7 @@ func TestUserRegstr(t *testing.T) {
 			client := new(http.Client)
 			client.Jar = jar
 			resp, err := client.Do(request)
+			resp.Body.Close()
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.want.statusCode, resp.StatusCode)
