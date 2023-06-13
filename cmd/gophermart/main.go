@@ -22,7 +22,7 @@ func main() {
 		return
 	}
 	service := service.NewService(storage, log)
-	router := handlers.NewRouter(service)
+	router := handlers.NewRouter(service, log)
 
 	err = http.ListenAndServe(cfg.Server, router)
 	if err != nil {
