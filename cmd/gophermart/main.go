@@ -12,7 +12,7 @@ import (
 func main() {
 	log := config.InitLog()
 
-	cfg, err := config.GetConfig()
+	cfg, err := config.GetConfig(log)
 	if err != nil {
 		log.Error(err.Error())
 		return
@@ -24,7 +24,11 @@ func main() {
 	service := service.NewService(storage, log)
 	router := handlers.NewRouter(service)
 
-	http.ListenAndServe(cfg.Server, router)
+	err = http.ListenAndServe(cfg.Server, router)
+	if err != nil {
+		log.Error(err.Error())
+		return
+	}
 	defer storage.Close()
 }
 

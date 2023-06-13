@@ -32,6 +32,7 @@ type ServiceStruct struct {
 }
 
 func NewService(storage Storer, log *logrus.Logger) *ServiceStruct {
+	log.Info("Инициализируем сервис")
 	return &ServiceStruct{
 		storage: storage,
 		Log:     log,
@@ -128,7 +129,7 @@ func (s ServiceStruct) AddUserOrder(ctx context.Context, number string, cookie s
 		"cookie": cookie}).Info("Добавление заказа")
 
 	//проверить формат номера заказа
-	if config.CheckLuhnAlg(number) == false {
+	if !config.CheckLuhnAlg(number) {
 		s.Log.Error(model.ErrNotValidOrderNumber.Error())
 		return model.ErrNotValidOrderNumber
 	}

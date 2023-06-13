@@ -2,9 +2,9 @@ package config
 
 import (
 	"flag"
-	"log"
 
 	"github.com/caarlos0/env"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -24,7 +24,7 @@ var (
 	database = "user=habruser password=habr host=localhost port=5432 dbname=habrdb sslmode=disable"
 )
 
-func GetConfig() (Config, error) {
+func GetConfig(log *logrus.Logger) (Config, error) {
 	var cfg Config
 	var cfgFlag Config
 
@@ -34,7 +34,6 @@ func GetConfig() (Config, error) {
 		return Config{}, err
 	}
 
-	log.Println(cfgFlag)
 	// флаг -a, отвечающий за адрес запуска сервиса
 	flag.StringVar(&cfgFlag.Server, "a", localAddr, "HTTP server address")
 
@@ -44,8 +43,7 @@ func GetConfig() (Config, error) {
 	flag.StringVar(&cfgFlag.AccrualSys, "r", baseURL, "Accrual system")
 	flag.Parse()
 
-	log.Printf("Флаги командной строки: %s\n", cfgFlag)
-	log.Printf("Переменные конфигурации: %s\n", &cfg)
+	log.WithFields(logrus.Fields{"cfgFlag": cfgFlag}).Info("Получены флаги командной строки")
 
 	if cfg.Server == "" || cfg.Server == localAddr {
 		cfg.Server = cfgFlag.Server
@@ -58,5 +56,7 @@ func GetConfig() (Config, error) {
 	if cfg.AccrualSys == "" {
 		cfg.AccrualSys = cfgFlag.AccrualSys
 	}
+
+	log.WithFields(logrus.Fields{"cfg": cfg}).Info("Итоговая конфигурация")
 	return cfg, err
 }

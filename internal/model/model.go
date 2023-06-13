@@ -31,13 +31,13 @@ type OrderWithdraw struct {
 //описать ошибки для разных кодов ответа
 
 var (
-	ErrWrongRequest        = errors.New("Wrong request")
-	ErrNotAuthorized       = errors.New("User not authorized")
-	ErrLoginExists         = errors.New("Login already exists")
-	ErrAuthFailed          = errors.New("Authentification failed")
-	ErrOrderExistsSameUser = errors.New("Order number has downloaded by current user")
-	ErrOrderExistsDiffUser = errors.New("Order number has downloaded by other user")
-	ErrNotValidOrderNumber = errors.New("Order number is not valid")
+	ErrWrongRequest        = errors.New("wrong request")
+	ErrNotAuthorized       = errors.New("user not authorized")
+	ErrLoginExists         = errors.New("login already exists")
+	ErrAuthFailed          = errors.New("authentification failed")
+	ErrOrderExistsSameUser = errors.New("order number has downloaded by current user")
+	ErrOrderExistsDiffUser = errors.New("order number has downloaded by other user")
+	ErrNotValidOrderNumber = errors.New("order number is not valid")
 
 	Secretkey = []byte("secret key")
 )

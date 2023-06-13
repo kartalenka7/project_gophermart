@@ -14,11 +14,6 @@ import (
 	"github.com/kartalenka7/project_gophermart/internal/model"
 )
 
-type gzipWriter struct {
-	http.ResponseWriter
-	Writer io.Writer
-}
-
 // Обработка запросов с поддержкой сжатия данных
 func gzipHandle(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
