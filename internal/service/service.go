@@ -21,7 +21,7 @@ import (
 type Storer interface {
 	AddUser(ctx context.Context, user model.User) error
 	GetUser(ctx context.Context, user model.User) (string, error)
-	AddOrder(ctx context.Context, number string, cookie string) error
+	AddOrder(ctx context.Context, number string) error
 	GetOrders(user model.User) ([]model.Orders, error)
 	WriteWithdraw() error
 }
@@ -125,11 +125,7 @@ func generateCookie(len int) (string, error) {
 	return token, nil
 }
 
-func (s ServiceStruct) AddUserOrder(ctx context.Context, number string, cookie string) error {
-
-	s.Log.WithFields(logrus.Fields{
-		"number": number,
-		"cookie": cookie}).Info("Добавление заказа")
+func (s ServiceStruct) AddUserOrder(ctx context.Context, number string) error {
 
 	//проверить формат номера заказа
 	if !config.CheckLuhnAlg(number) {
@@ -137,7 +133,7 @@ func (s ServiceStruct) AddUserOrder(ctx context.Context, number string, cookie s
 		return model.ErrNotValidOrderNumber
 	}
 
-	err := s.storage.AddOrder(ctx, number, cookie)
+	err := s.storage.AddOrder(ctx, number)
 	return err
 }
 

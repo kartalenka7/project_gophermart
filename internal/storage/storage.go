@@ -24,9 +24,9 @@ var (
 							cookie   TEXT
 						)`
 	createOrdersTable = `CREATE TABLE IF NOT EXISTS
-						 ordersTable(
+						 orderTable(
 							number TEXT PRIMARY KEY,
-							cookie TEXT,
+							login TEXT,
 							time   TEXT,
 							status TEXT
 						 )`
@@ -40,8 +40,8 @@ var (
 	insertUser = `INSERT INTO users(login, password, cookie) VALUES($1, $2, $3)`
 	selectUser = `SELECT password, cookie FROM users WHERE login = $1`
 
-	selectOrder = `SELECT cookie FROM ordersTable WHERE number = $1`
-	insertOrder = `INSERT INTO ordersTable(number, cookie, date) VALUES($1, $2, $3)`
+	selectOrder = `SELECT login FROM orderTable WHERE number = $1`
+	insertOrder = `INSERT INTO orderTable(number, cookie, date) VALUES($1, $2, $3)`
 )
 
 type DBStruct struct {
@@ -125,15 +125,18 @@ func (db *DBStruct) GetUser(ctx context.Context, user model.User) (string, error
 	return checkUser.Cookie, err
 }
 
-func (db *DBStruct) AddOrder(ctx context.Context, number string, cookie string) error {
+func (db *DBStruct) AddOrder(ctx context.Context, number string) error {
 	var user string
+
+	login := ctx.Value("login").(string)
+
 	t := time.Now().Format(time.RFC3339)
 
 	row := db.pgxPool.QueryRow(ctx, selectOrder, number)
 	err := row.Scan(&user)
 	if err == nil {
 		// Номер заказа уже был загружен этим пользователем
-		if user == cookie {
+		if user == login {
 			return model.ErrOrderExistsSameUser
 		}
 		// Номер заказа уже был загружен другим пользователем
@@ -141,8 +144,10 @@ func (db *DBStruct) AddOrder(ctx context.Context, number string, cookie string) 
 			"user": user}).Error(model.ErrOrderExistsDiffUser.Error())
 		return model.ErrOrderExistsDiffUser
 	}
-	// запрос insert в таблицу orders
-	_, err = db.pgxPool.Exec(ctx, insertOrder, number, t, cookie)
+	db.log.WithFields(logrus.Fields{
+		"number": number,
+		"login":  login}).Info("Добавление заказа")
+	_, err = db.pgxPool.Exec(ctx, insertOrder, number, t, login)
 	if err != nil {
 		db.log.Error(err.Error())
 	}

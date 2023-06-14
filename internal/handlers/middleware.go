@@ -2,15 +2,12 @@ package handlers
 
 import (
 	"compress/gzip"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
-	"errors"
+	"context"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/kartalenka7/project_gophermart/internal/model"
 )
 
@@ -49,33 +46,35 @@ func gzipHandle(next http.Handler) http.Handler {
 }
 
 // Проверить, что пользователь аутентифицирован
-func checkUserAuth(next http.Handler) http.Handler {
+func (s server) checkUserAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("UserAuth")
-		if err != nil || cookie.Value == "" {
+		//Получение токена
+		tokenHeader := r.Header.Get("Authorization")
+		if tokenHeader == "" {
+			s.log.Error("Токен пуст")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		tk := &model.Token{}
+		token, err := jwt.ParseWithClaims(tokenHeader, tk, func(token *jwt.Token) (interface{}, error) {
+			return []byte("secret"), nil
+		})
 
-		signedValue, err := base64.URLEncoding.DecodeString(cookie.Value)
 		if err != nil {
-			log.Printf("check authentification|%v\n", err)
+			s.log.Error(err.Error())
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 
-		signature := signedValue[:sha256.Size]
-		value := signedValue[sha256.Size:]
-
-		mac := hmac.New(sha256.New, model.Secretkey)
-		mac.Write([]byte(value))
-		expectedSignature := mac.Sum(nil)
-
-		if !hmac.Equal([]byte(signature), expectedSignature) {
-			log.Printf("check authentification|%s\n", errors.New("подпись не совпадает"))
+		if !token.Valid {
+			s.log.Error("Token not valid")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 
+		// передаем логин через контекст
+		ctx := context.WithValue(r.Context(), "login", tk.Login)
+		r = r.WithContext(ctx)
+		next.ServeHTTP(w, r)
 	})
 }

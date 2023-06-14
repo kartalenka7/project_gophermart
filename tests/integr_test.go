@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httptest"
 	"testing"
 
@@ -16,19 +15,12 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/publicsuffix"
 )
-
-var jar *cookiejar.Jar
-
-func init() {
-	jar, _ = cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
-}
 
 func TestUserRegstr(t *testing.T) {
 	type want struct {
 		statusCode int
-		cookie     http.Cookie
+		authToken  string
 	}
 
 	tests := []struct {
@@ -43,12 +35,11 @@ func TestUserRegstr(t *testing.T) {
 			method:  http.MethodPost,
 			request: "/api/user/register",
 			user: model.User{
-				Login:    "user4",
+				Login:    "user7",
 				Password: "1234",
 			},
 			want: want{
 				statusCode: http.StatusOK,
-				cookie:     http.Cookie{Name: "UserAuth"},
 			},
 		},
 		{
@@ -56,12 +47,11 @@ func TestUserRegstr(t *testing.T) {
 			method:  http.MethodPost,
 			request: "/api/user/register",
 			user: model.User{
-				Login:    "user4",
+				Login:    "user7",
 				Password: "1234",
 			},
 			want: want{
 				statusCode: http.StatusConflict,
-				cookie:     http.Cookie{Name: ""},
 			},
 		},
 	}
@@ -96,17 +86,15 @@ func TestUserRegstr(t *testing.T) {
 
 			// настраиваем клиента и куки
 			client := new(http.Client)
-			client.Jar = jar
 			resp, err := client.Do(request)
 			resp.Body.Close()
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.want.statusCode, resp.StatusCode)
 
-			for _, cookie := range jar.Cookies(request.URL) {
-				log.WithFields(logrus.Fields{"cookie": cookie}).Info("Получены куки")
-				assert.Equal(t, tt.want.cookie.Name, cookie.Name)
-			}
+			token := resp.Header.Get("Authorization")
+			log.WithFields(logrus.Fields{"token": token}).Info("Получен токен авторизации")
+			assert.NotNil(t, token)
 
 		})
 	}

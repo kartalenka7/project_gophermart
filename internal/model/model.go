@@ -2,12 +2,20 @@ package model
 
 import (
 	"errors"
+
+	"github.com/dgrijalva/jwt-go"
 )
 
 type User struct {
 	Login    string `json:"login"`
 	Password string `json:"password"`
 	Cookie   string
+}
+
+// Структура прав доступа JWT
+type Token struct {
+	Login string
+	jwt.StandardClaims
 }
 
 type Orders struct {
