@@ -17,7 +17,7 @@ func main() {
 		log.Error(err.Error())
 		return
 	}
-	storage, err := storage.NewStorage(cfg.Database, log)
+	storage, err := storage.NewStorage(cfg.Database, cfg.AccrualSys, log)
 	if err != nil {
 		return
 	}

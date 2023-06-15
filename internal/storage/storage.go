@@ -44,7 +44,7 @@ var (
 
 	selectOrder      = `SELECT login FROM orders WHERE number = $1`
 	selectUserOrders = `SELECT number, login, time, status, accrual FROM orders WHERE login = $1`
-	insertOrder      = `INSERT INTO orders(number, login, time) VALUES($1, $2, $3)`
+	insertOrder      = `INSERT INTO orders(number, login, time, status, accrual) VALUES($1, $2, $3, 'NEW', 0)`
 
 	selectProcessingOrders = `SELECT number FROM orders WHERE status != $1 AND status != $2`
 	updateOrdersStatus     = `UPDATE orders SET status = $1, accrual = $2 WHERE number = $3`
@@ -55,12 +55,12 @@ type DBStruct struct {
 	log     *logrus.Logger
 }
 
-func NewStorage(connString string, log *logrus.Logger) (*DBStruct, error) {
+func NewStorage(connString string, accrualSys string, log *logrus.Logger) (*DBStruct, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	time.AfterFunc(60*time.Second, cancel)
 
-	pgxPool, err := InitConnection(ctx, connString, log)
+	pgxPool, err := InitConnection(ctx, connString, accrualSys, log)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func NewStorage(connString string, log *logrus.Logger) (*DBStruct, error) {
 	}, nil
 }
 
-func InitConnection(ctx context.Context, connString string, log *logrus.Logger) (*pgxpool.Pool, error) {
+func InitConnection(ctx context.Context, connString string, accrualSys string, log *logrus.Logger) (*pgxpool.Pool, error) {
 
 	log.Info("Инициализируем пул соединений с Postgres, создаем таблицы")
 	pgxPool, err := pgxpool.Connect(ctx, connString)
@@ -91,7 +91,7 @@ func InitConnection(ctx context.Context, connString string, log *logrus.Logger) 
 	}
 
 	log.Info("Запускаем горутину для взаимодейтсвия с системой расчета баллов лояльности")
-	go updateOrders(ctx, pgxPool, log)
+	go updateOrders(ctx, pgxPool, accrualSys, log)
 	return pgxPool, nil
 }
 
@@ -157,7 +157,8 @@ func (db *DBStruct) AddOrder(ctx context.Context, number string) error {
 	}
 	db.log.WithFields(logrus.Fields{
 		"number": number,
-		"login":  login}).Info("Запись заказа в таблицу orderTable")
+		"login":  login,
+		"t":      t}).Info("Запись заказа в таблицу orderTable")
 
 	_, err = db.pgxPool.Exec(ctx, insertOrder, number, login, t)
 	if err != nil {
@@ -174,6 +175,9 @@ func (db *DBStruct) GetOrders(ctx context.Context) ([]model.OrdersResponse, erro
 
 	login := ctx.Value(model.KeyLogin).(string)
 
+	db.log.WithFields(logrus.Fields{
+		"login": login,
+	}).Info("Выбираем заказы для пользователя")
 	// выбираем список запросов для авторизованного пользователя
 	rows, err := db.pgxPool.Query(ctx, selectUserOrders, login)
 	if err != nil {
@@ -182,12 +186,16 @@ func (db *DBStruct) GetOrders(ctx context.Context) ([]model.OrdersResponse, erro
 	}
 
 	for rows.Next() {
-		err := rows.Scan(&orderResp.Number, &orderResp.Login, &timeStr, &orderResp.Status, accrualInt)
+		err := rows.Scan(&orderResp.Number, &orderResp.Login, &timeStr, &orderResp.Status, &accrualInt)
 		if err != nil {
 			db.log.Error(err.Error())
 			return nil, err
 		}
 		//парсим строку со временем в тип time.Time
+		db.log.WithFields(logrus.Fields{
+			"time":   timeStr,
+			"number": orderResp.Number,
+		}).Info("Получили строку с заказом")
 		orderResp.Time, err = time.Parse(time.RFC3339, timeStr)
 		if err != nil {
 			db.log.Error(err.Error())
@@ -202,6 +210,10 @@ func (db *DBStruct) GetOrders(ctx context.Context) ([]model.OrdersResponse, erro
 		return nil, err
 	}
 
+	if orders == nil {
+		db.log.Info("в orders пусто")
+		return nil, errors.New("в orders пусто")
+	}
 	// сортируем ответ по времени
 	sort.SliceStable(orders, func(i, j int) bool {
 		return orders[i].Time.Before(orders[j].Time)
@@ -221,13 +233,13 @@ func (db *DBStruct) WriteWithdraw() error {
 }
 
 // взаимодействие с системой расчета начислений баллов лояльности
-func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, log *logrus.Logger) {
+func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, accrualSys string, log *logrus.Logger) {
 	var allResp []model.PointsAppResponse
 	var orderNumber string
 	var orderNumbers []string
 	var accrual int32
 
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
@@ -237,14 +249,15 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, log *logrus.Logger
 			rows, err := pgxPool.Query(ctx, selectProcessingOrders, "INVALID", "PROCESSED")
 			if err != nil {
 				log.Error(err.Error())
-				return
+				continue
 			}
 
 			for rows.Next() {
+				log.WithFields(logrus.Fields{"orderNember": orderNumber}).Info("Выбран заказ для запроса статуса")
 				err := rows.Scan(&orderNumber)
 				if err != nil {
 					log.Error(err.Error())
-					return
+					continue
 				}
 				orderNumbers = append(orderNumbers, orderNumber)
 			}
@@ -252,8 +265,9 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, log *logrus.Logger
 			pointsResp := model.PointsAppResponse{}
 			client := &http.Client{}
 			for _, v := range orderNumbers {
-				url := "api/orders/" + v
+				url := accrualSys + "/api/orders/" + v
 
+				log.Info("http запрос в систему начислений баллов лояльности")
 				// http запрос в систему начислений баллов лояльности
 				request, err := http.NewRequest(http.MethodGet, url, nil)
 				if err != nil {
@@ -266,6 +280,7 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, log *logrus.Logger
 					log.Error(err.Error())
 					continue
 				}
+				log.WithFields(logrus.Fields{"status-code": resp.StatusCode}).Info("Статус ответа")
 				decoder := json.NewDecoder(resp.Body)
 				if err = decoder.Decode(&pointsResp); err != nil {
 					log.Error(err.Error())
@@ -275,6 +290,9 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, log *logrus.Logger
 				resp.Body.Close()
 			}
 
+			if allResp == nil {
+				continue
+			}
 			// обновить статусы и баллы полученных в ответе заказов
 			batch := &pgx.Batch{}
 			for _, response := range allResp {
@@ -288,11 +306,11 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, log *logrus.Logger
 				}).Info("Обновление заказа")
 			}
 			batchReq := pgxPool.SendBatch(ctx, batch)
-			defer batchReq.Close()
 			_, err = batchReq.Exec()
 			if err != nil {
 				log.Error(err.Error())
 			}
+			batchReq.Close()
 		case <-ctx.Done():
 			log.Error("Отмена контекста")
 			return

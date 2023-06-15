@@ -58,7 +58,7 @@ func TestUserRegstr(t *testing.T) {
 	log := config.InitLog()
 	cfg, err := config.GetConfig(log)
 	require.NoError(t, err)
-	storage, err := storage.NewStorage(cfg.Database, log)
+	storage, err := storage.NewStorage(cfg.Database, cfg.AccrualSys, log)
 	require.NoError(t, err)
 	service := service.NewService(storage, log)
 	router := handlers.NewRouter(service, log)
@@ -120,7 +120,7 @@ func TestOrders(t *testing.T) {
 			request: request{
 				url:         "/api/user/orders",
 				contentType: "text/plain"},
-			number: "456126408",
+			number: "45612652",
 			user: model.User{
 				Login:    "user2",
 				Password: "1234",
@@ -134,7 +134,7 @@ func TestOrders(t *testing.T) {
 	log := config.InitLog()
 	cfg, err := config.GetConfig(log)
 	require.NoError(t, err)
-	storage, err := storage.NewStorage(cfg.Database, log)
+	storage, err := storage.NewStorage(cfg.Database, cfg.AccrualSys, log)
 	require.NoError(t, err)
 	service := service.NewService(storage, log)
 	router := handlers.NewRouter(service, log)
@@ -182,6 +182,17 @@ func TestOrders(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.want.statusCode, resp.StatusCode)
+
+			// запрос на получение списка заказов
+			reqOrdersAll, err := http.NewRequest(http.MethodGet, ts.URL+"/api/user/orders", nil)
+			assert.NoError(t, err)
+			reqOrdersAll.Header.Add("Authorization", token)
+			respOrdersAll, err := client.Do(reqOrdersAll)
+			require.NoError(t, err)
+			defer respOrdersAll.Body.Close()
+
+			assert.Equal(t, http.StatusAlreadyReported, respOrdersAll.StatusCode)
+
 		})
 	}
 }
