@@ -26,7 +26,7 @@ var (
 						)`
 	createOrdersTable = `CREATE TABLE IF NOT EXISTS
 						 orders(
-							number TEXT PRIMARY KEY,
+							number TEXT PRIMARY KEY UNIQUE,
 							login TEXT,
 							time   TEXT,
 							status TEXT,
@@ -239,7 +239,7 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, accrualSys string,
 	var orderNumbers []string
 	var accrual int32
 
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -252,8 +252,9 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, accrualSys string,
 				continue
 			}
 
+			orderNumbers = orderNumbers[:0]
 			for rows.Next() {
-				log.WithFields(logrus.Fields{"orderNember": orderNumber}).Info("Выбран заказ для запроса статуса")
+				log.WithFields(logrus.Fields{"orderNumber": orderNumber}).Info("Выбран заказ для запроса статуса")
 				err := rows.Scan(&orderNumber)
 				if err != nil {
 					log.Error(err.Error())

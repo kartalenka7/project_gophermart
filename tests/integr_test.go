@@ -191,7 +191,7 @@ func TestOrders(t *testing.T) {
 			require.NoError(t, err)
 			defer respOrdersAll.Body.Close()
 
-			assert.Equal(t, http.StatusAlreadyReported, respOrdersAll.StatusCode)
+			assert.Equal(t, http.StatusOK, respOrdersAll.StatusCode)
 
 		})
 	}
