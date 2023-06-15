@@ -192,16 +192,18 @@ func (db *DBStruct) GetOrders(ctx context.Context) ([]model.OrdersResponse, erro
 			return nil, err
 		}
 		//парсим строку со временем в тип time.Time
-		db.log.WithFields(logrus.Fields{
-			"time":   timeStr,
-			"number": orderResp.Number,
-		}).Info("Получили строку с заказом")
 		orderResp.Time, err = time.Parse(time.RFC3339, timeStr)
 		if err != nil {
 			db.log.Error(err.Error())
 		}
 		//переводим из копеек
 		orderResp.Accrual = float32(accrualInt / 100)
+		db.log.WithFields(logrus.Fields{
+			"time":    timeStr,
+			"number":  orderResp.Number,
+			"status":  orderResp.Status,
+			"accrual": orderResp.Accrual,
+		}).Info("Получили строку с заказом")
 		orders = append(orders, orderResp)
 	}
 
@@ -254,12 +256,12 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, accrualSys string,
 
 			orderNumbers = orderNumbers[:0]
 			for rows.Next() {
-				log.WithFields(logrus.Fields{"orderNumber": orderNumber}).Info("Выбран заказ для запроса статуса")
 				err := rows.Scan(&orderNumber)
 				if err != nil {
 					log.Error(err.Error())
 					continue
 				}
+				log.WithFields(logrus.Fields{"orderNumber": orderNumber}).Info("Выбран заказ для запроса статуса")
 				orderNumbers = append(orderNumbers, orderNumber)
 			}
 
@@ -269,7 +271,6 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, accrualSys string,
 				url := accrualSys + "/api/orders/" + v
 
 				log.Info("http запрос в систему начислений баллов лояльности")
-				// http запрос в систему начислений баллов лояльности
 				request, err := http.NewRequest(http.MethodGet, url, nil)
 				if err != nil {
 					log.Error(err.Error())

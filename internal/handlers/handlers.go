@@ -148,7 +148,10 @@ func (s server) getOrders(rw http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("Список заказов успешно возвращен")
 	fmt.Fprint(rw, buf)
-	r.Header.Add("Content-Type", "application/json")
+
+	// устанавливаем заголовок Content-Type
+	// для передачи клиенту информации, кодированной в JSO
+	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(http.StatusOK)
 
 }
