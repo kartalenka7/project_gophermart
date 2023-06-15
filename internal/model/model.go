@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"time"
 
 	"github.com/dgrijalva/jwt-go"
 )
@@ -9,7 +10,6 @@ import (
 type User struct {
 	Login    string `json:"login"`
 	Password string `json:"password"`
-	Cookie   string
 }
 
 // Структура прав доступа JWT
@@ -18,17 +18,18 @@ type Token struct {
 	jwt.StandardClaims
 }
 
-type Orders struct {
-	Number string
-	User   string
-	Date   string
-	Status string
+type OrdersResponse struct {
+	Number  string    `json:"number"`
+	Status  string    `json:"status"`
+	Accrual float32   `json:"accrual"`
+	Time    time.Time `json:"uploaded_at"`
+	Login   string
 }
 
 type PointsAppResponse struct {
-	Number  string `json:"order"`
-	Status  string `json:"status"`
-	Accrual int32  `json:"accrual"` //кол-во баллов, начисленное за заказ
+	Number  string  `json:"order"`
+	Status  string  `json:"status"`
+	Accrual float32 `json:"accrual"` //кол-во баллов, начисленное за заказ
 }
 
 type OrderWithdraw struct {
@@ -48,4 +49,10 @@ var (
 	ErrNotValidOrderNumber = errors.New("order number is not valid")
 
 	Secretkey = []byte("secret key")
+)
+
+type keyLogin string
+
+const (
+	KeyLogin keyLogin = "login"
 )

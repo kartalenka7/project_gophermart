@@ -22,24 +22,26 @@ func NewRouter(service ServiceIntf, log *logrus.Logger) chi.Router {
 		r.Use(gzipHandle)
 		r.Post("/register", server.userRegstr)
 		r.Post("/login", server.userAuth)
+	})
 
-		router.Route("/orders", func(r chi.Router) {
-			r.Use(server.checkUserAuth)
-			r.Post("/", server.addOrder)
-			r.Get("/", server.getOrders)
-		})
+	router.Route("/api/user/orders", func(r chi.Router) {
+		r.Use(gzipHandle)
+		r.Use(server.checkUserAuth)
+		r.Post("/", server.addOrder)
+		r.Get("/", server.getOrders)
+	})
 
-		router.Route("/balance", func(r chi.Router) {
-			r.Use(server.checkUserAuth)
-			r.Get("/", server.getBalance)
-			r.Post("/withdraw", server.withdraw)
-		})
+	router.Route("/api/user/balance", func(r chi.Router) {
+		r.Use(gzipHandle)
+		r.Use(server.checkUserAuth)
+		r.Get("/", server.getBalance)
+		r.Post("/withdraw", server.withdraw)
+	})
 
-		router.Route("/withdrawals", func(r chi.Router) {
-			r.Use(server.checkUserAuth)
-			r.Get("/", server.getWithdrawals)
-		})
-
+	router.Route("/api/user/withdrawals", func(r chi.Router) {
+		r.Use(gzipHandle)
+		r.Use(server.checkUserAuth)
+		r.Get("/", server.getWithdrawals)
 	})
 
 	return router

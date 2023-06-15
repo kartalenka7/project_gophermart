@@ -1,7 +1,5 @@
 package config
 
-import "fmt"
-
 const (
 	asciiZero = 48
 )
@@ -23,13 +21,10 @@ func CheckLuhnAlg(number string) bool {
 			if v > 9 {
 				v -= 9
 			}
-			fmt.Printf("v, i %d %d\n", v, i)
 		}
 
 		// складываем все числа
 		luhn += int64(v)
-		fmt.Printf("luhn %d\n", luhn)
-
 	}
 	// Полученная сумма должна быть кратна 10
 	return luhn%10 == 0

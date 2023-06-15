@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
@@ -18,17 +20,18 @@ import (
 
 var (
 	createUserTable = `CREATE TABLE IF NOT EXISTS
-						users(
+					    users(
 							login    TEXT PRIMARY KEY,
-							password TEXT,
-							cookie   TEXT
+							password TEXT
 						)`
-	createOrdersTable = `CREATE TABLE IF NOT EXISTS
-						 orderTable(
+	createOrdersTable = `DROP TABLE IF EXISTS orders
+						 CREATE TABLE IF NOT EXISTS
+						 orders(
 							number TEXT PRIMARY KEY,
 							login TEXT,
 							time   TEXT,
-							status TEXT
+							status TEXT,
+							accrual INT
 						 )`
 	createHistoryTable = `CREATE TABLE IF NOT EXISTS
 							ordersHistory(
@@ -37,11 +40,15 @@ var (
 								time     TEXT
 							)`
 
-	insertUser = `INSERT INTO users(login, password, cookie) VALUES($1, $2, $3)`
-	selectUser = `SELECT password, cookie FROM users WHERE login = $1`
+	insertUser = `INSERT INTO users(login, password) VALUES($1, $2)`
+	selectUser = `SELECT password FROM users WHERE login = $1`
 
-	selectOrder = `SELECT login FROM orderTable WHERE number = $1`
-	insertOrder = `INSERT INTO orderTable(number, cookie, date) VALUES($1, $2, $3)`
+	selectOrder      = `SELECT login FROM orders WHERE number = $1`
+	selectUserOrders = `SELECT number, login, time, status, accrual FROM orders WHERE login = $1`
+	insertOrder      = `INSERT INTO orders(number, login, time) VALUES($1, $2, $3)`
+
+	selectProcessingOrders = `SELECT number FROM orders WHERE status != "INVALID" AND status != "PROCESSED"`
+	updateOrdersStatus     = `UPDATE orders SET status = $1, accrual = $2 WHERE number = $3`
 )
 
 type DBStruct struct {
@@ -84,6 +91,8 @@ func InitConnection(ctx context.Context, connString string, log *logrus.Logger) 
 		return nil, err
 	}
 
+	log.Info("Запускаем горутину для взаимодейтсвия с системой расчета баллов лояльности")
+	go updateOrders(ctx, pgxPool, log)
 	return pgxPool, nil
 }
 
@@ -94,7 +103,7 @@ func (db *DBStruct) Close() {
 func (db *DBStruct) AddUser(ctx context.Context, user model.User) error {
 	var pgxError *pgconn.PgError
 	// добавляем пользователя в таблицу users
-	_, err := db.pgxPool.Exec(ctx, insertUser, user.Login, user.Password, user.Cookie)
+	_, err := db.pgxPool.Exec(ctx, insertUser, user.Login, user.Password)
 	if errors.As(err, &pgxError) {
 		// Логин уже существует
 		if pgxError.Code == pgerrcode.UniqueViolation {
@@ -108,13 +117,13 @@ func (db *DBStruct) AddUser(ctx context.Context, user model.User) error {
 	return err
 }
 
-func (db *DBStruct) GetUser(ctx context.Context, user model.User) (string, error) {
+func (db *DBStruct) GetUser(ctx context.Context, user model.User) error {
 	var checkUser model.User
 	row := db.pgxPool.QueryRow(ctx, selectUser, user.Login)
-	err := row.Scan(&checkUser.Password, &checkUser.Cookie)
+	err := row.Scan(&checkUser.Password)
 	if err != nil {
 		db.log.Error(err.Error())
-		return "", err
+		return err
 	}
 
 	// проверить хэш пароля
@@ -122,21 +131,24 @@ func (db *DBStruct) GetUser(ctx context.Context, user model.User) (string, error
 	if err != nil {
 		db.log.Error(err.Error())
 	}
-	return checkUser.Cookie, err
+	return err
 }
 
 func (db *DBStruct) AddOrder(ctx context.Context, number string) error {
 	var user string
 
-	login := ctx.Value("login").(string)
+	login := ctx.Value(model.KeyLogin).(string)
 
+	// форматировать текущий момент времени в строку
 	t := time.Now().Format(time.RFC3339)
 
 	row := db.pgxPool.QueryRow(ctx, selectOrder, number)
 	err := row.Scan(&user)
+
 	if err == nil {
 		// Номер заказа уже был загружен этим пользователем
 		if user == login {
+			db.log.Error(model.ErrOrderExistsSameUser.Error())
 			return model.ErrOrderExistsSameUser
 		}
 		// Номер заказа уже был загружен другим пользователем
@@ -146,21 +158,55 @@ func (db *DBStruct) AddOrder(ctx context.Context, number string) error {
 	}
 	db.log.WithFields(logrus.Fields{
 		"number": number,
-		"login":  login}).Info("Добавление заказа")
-	_, err = db.pgxPool.Exec(ctx, insertOrder, number, t, login)
+		"login":  login}).Info("Запись заказа в таблицу orderTable")
+
+	_, err = db.pgxPool.Exec(ctx, insertOrder, number, login, t)
 	if err != nil {
 		db.log.Error(err.Error())
 	}
 	return err
 }
 
-func (db *DBStruct) GetOrders(user model.User) ([]model.Orders, error) {
-	var orders []model.Orders
+func (db *DBStruct) GetOrders(ctx context.Context) ([]model.OrdersResponse, error) {
+	var timeStr string
+	var accrualInt int32
+	var orderResp model.OrdersResponse
+	var orders []model.OrdersResponse
 
-	// запрос select в таблицу orders
+	login := ctx.Value(model.KeyLogin).(string)
 
-	// http запрос в систему начислений баллов лояльности
-	getOrdersPoints(orders)
+	// выбираем список запросов для авторизованного пользователя
+	rows, err := db.pgxPool.Query(ctx, selectUserOrders, login)
+	if err != nil {
+		db.log.Error(err.Error())
+		return nil, err
+	}
+
+	for rows.Next() {
+		err := rows.Scan(&orderResp.Number, &orderResp.Login, &timeStr, &orderResp.Status, accrualInt)
+		if err != nil {
+			db.log.Error(err.Error())
+			return nil, err
+		}
+		//парсим строку со временем в тип time.Time
+		orderResp.Time, err = time.Parse(time.RFC3339, timeStr)
+		if err != nil {
+			db.log.Error(err.Error())
+		}
+		//переводим из копеек
+		orderResp.Accrual = float32(accrualInt / 100)
+		orders = append(orders, orderResp)
+	}
+
+	if rows.Err() != nil {
+		db.log.Error(err.Error())
+		return nil, err
+	}
+
+	// сортируем ответ по времени
+	sort.SliceStable(orders, func(i, j int) bool {
+		return orders[i].Time.Before(orders[j].Time)
+	})
 	return orders, nil
 }
 
@@ -176,29 +222,70 @@ func (db *DBStruct) WriteWithdraw() error {
 }
 
 // взаимодействие с системой расчета начислений баллов лояльности
-func getOrdersPoints(orders []model.Orders) ([]model.PointsAppResponse, error) {
+func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, log *logrus.Logger) {
 	var allResp []model.PointsAppResponse
+	var orderNumber string
+	var orderNumbers []string
+	var accrual int32
+
+	// выбрать заказы, у которых не окончательный статус
+	rows, err := pgxPool.Query(ctx, selectProcessingOrders)
+	if err != nil {
+		log.Error(err.Error())
+		return
+	}
+
+	for rows.Next() {
+		err := rows.Scan(&orderNumber)
+		if err != nil {
+			log.Error(err.Error())
+			return
+		}
+		orderNumbers = append(orderNumbers, orderNumber)
+	}
+
 	pointsResp := model.PointsAppResponse{}
 	client := &http.Client{}
-	for _, v := range orders {
-		url := "api/orders/" + v.Number
+	for _, v := range orderNumbers {
+		url := "api/orders/" + v
+
+		// http запрос в систему начислений баллов лояльности
 		request, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
-			//обработка ошибки
-			return nil, err
+			log.Error(err.Error())
+			continue
 		}
 		request.Header.Add("Content-Length", "0")
 		resp, err := client.Do(request)
 		if err != nil {
-			//обработка ошибки
-			return nil, err
+			log.Error(err.Error())
+			continue
 		}
 		decoder := json.NewDecoder(resp.Body)
 		if err = decoder.Decode(&pointsResp); err != nil {
-			return nil, err
+			log.Error(err.Error())
+			continue
 		}
 		allResp = append(allResp, pointsResp)
 		resp.Body.Close()
 	}
-	return allResp, nil
+
+	// обновить статусы и баллы полученных в ответе заказов
+	batch := &pgx.Batch{}
+	for _, response := range allResp {
+		// переводим в копейки
+		accrual = int32(response.Accrual * 100)
+		batch.Queue(updateOrdersStatus, response.Status, accrual, response.Number)
+		log.WithFields(logrus.Fields{
+			"number":  response.Number,
+			"status":  response.Status,
+			"accrual": accrual,
+		}).Info("Обновление заказа")
+	}
+	batchReq := pgxPool.SendBatch(ctx, batch)
+	defer batchReq.Close()
+	_, err = batchReq.Exec()
+	if err != nil {
+		log.Error(err.Error())
+	}
 }

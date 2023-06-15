@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -13,10 +16,10 @@ import (
 
 // интерфейс для взаимодействия с сервисом
 type ServiceIntf interface {
-	RgstrUser(ctx context.Context, user model.User) (string, error)
-	AuthUser(ctx context.Context, user model.User) (string, error)
+	RgstrUser(ctx context.Context, user model.User) error
+	AuthUser(ctx context.Context, user model.User) error
 	AddUserOrder(ctx context.Context, number string) error
-	GetUserOrders(user model.User) error
+	GetUserOrders(ctx context.Context) ([]model.OrdersResponse, error)
 	ParseUserCredentials(r *http.Request) (model.User, error)
 	WriteWithdraw(withdraw model.OrderWithdraw)
 }
@@ -30,7 +33,7 @@ func (s server) userRegstr(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = s.service.RgstrUser(r.Context(), user)
+	err = s.service.RgstrUser(r.Context(), user)
 	if err != nil {
 		// логин уже существует
 		if errors.Is(err, model.ErrLoginExists) {
@@ -49,7 +52,7 @@ func (s server) userRegstr(rw http.ResponseWriter, r *http.Request) {
 
 	rw.Header().Add("Authorization", tokenString)
 
-	s.log.Info("Пользователь успешно зарегистрирован и авторизован")
+	s.log.Info("Пользователь успешно зарегистрирован и аутентифицирован")
 	rw.WriteHeader(http.StatusOK)
 }
 
@@ -60,7 +63,7 @@ func (s server) userAuth(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = s.service.AuthUser(r.Context(), user)
+	err = s.service.AuthUser(r.Context(), user)
 	if err != nil {
 		// Неверные логин или пароль
 		if errors.Is(err, model.ErrAuthFailed) {
@@ -78,12 +81,13 @@ func (s server) userAuth(rw http.ResponseWriter, r *http.Request) {
 
 	rw.Header().Add("Authorization", tokenString)
 
-	s.log.Info("Пользователь успешно авторизован")
+	s.log.Info("Пользователь успешно аутентифицирован")
 	rw.WriteHeader(http.StatusOK)
 }
 
 func (s server) addOrder(rw http.ResponseWriter, r *http.Request) {
 
+	s.log.Info("Добавить заказ")
 	// получить номер заказа из body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -96,6 +100,7 @@ func (s server) addOrder(rw http.ResponseWriter, r *http.Request) {
 
 	// проверить формат запроса
 	if r.Header.Get("Content-Type") != "text/plain" {
+		s.log.Error("Неверный Content-Type")
 		rw.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -125,10 +130,27 @@ func (s server) addOrder(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (s server) getOrders(rw http.ResponseWriter, r *http.Request) {
-	var user model.User
-	// проверить авторизацию пользователя
+	s.log.Info("Получение списка заказов")
+	orders, err := s.service.GetUserOrders(r.Context())
+	if err != nil {
+		rw.WriteHeader(http.StatusNoContent)
+		return
+	}
 
-	s.service.GetUserOrders(user)
+	// пишем в тело ответа закодированный в JSON объект
+	buf := bytes.NewBuffer([]byte{})
+	encoder := json.NewEncoder(buf)
+	encoder.SetEscapeHTML(false)
+	err = encoder.Encode(orders)
+	if err != nil {
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	s.log.Info("Список заказов успешно возвращен")
+	fmt.Fprint(rw, buf)
+	r.Header.Add("Content-Type", "application/json")
+	rw.WriteHeader(http.StatusOK)
+
 }
 
 func (s server) withdraw(rw http.ResponseWriter, r *http.Request) {

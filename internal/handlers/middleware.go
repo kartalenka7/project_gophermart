@@ -48,6 +48,7 @@ func gzipHandle(next http.Handler) http.Handler {
 // Проверить, что пользователь аутентифицирован
 func (s server) checkUserAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.log.Info("Проверка аутентификации пользователя")
 		//Получение токена
 		tokenHeader := r.Header.Get("Authorization")
 		if tokenHeader == "" {
@@ -73,7 +74,7 @@ func (s server) checkUserAuth(next http.Handler) http.Handler {
 		}
 
 		// передаем логин через контекст
-		ctx := context.WithValue(r.Context(), "login", tk.Login)
+		ctx := context.WithValue(r.Context(), model.KeyLogin, tk.Login)
 		r = r.WithContext(ctx)
 		next.ServeHTTP(w, r)
 	})
