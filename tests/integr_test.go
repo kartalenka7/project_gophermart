@@ -120,9 +120,9 @@ func TestOrders(t *testing.T) {
 			request: request{
 				url:         "/api/user/orders",
 				contentType: "text/plain"},
-			number: "456126432",
+			number: "456126408",
 			user: model.User{
-				Login:    "user1",
+				Login:    "user2",
 				Password: "1234",
 			},
 			want: want{

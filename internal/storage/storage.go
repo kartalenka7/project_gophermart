@@ -24,8 +24,7 @@ var (
 							login    TEXT PRIMARY KEY,
 							password TEXT
 						)`
-	createOrdersTable = `DROP TABLE IF EXISTS orders
-						 CREATE TABLE IF NOT EXISTS
+	createOrdersTable = `CREATE TABLE IF NOT EXISTS
 						 orders(
 							number TEXT PRIMARY KEY,
 							login TEXT,
@@ -47,7 +46,7 @@ var (
 	selectUserOrders = `SELECT number, login, time, status, accrual FROM orders WHERE login = $1`
 	insertOrder      = `INSERT INTO orders(number, login, time) VALUES($1, $2, $3)`
 
-	selectProcessingOrders = `SELECT number FROM orders WHERE status != "INVALID" AND status != "PROCESSED"`
+	selectProcessingOrders = `SELECT number FROM orders WHERE status != $1 AND status != $2`
 	updateOrdersStatus     = `UPDATE orders SET status = $1, accrual = $2 WHERE number = $3`
 )
 
@@ -229,7 +228,7 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, log *logrus.Logger
 	var accrual int32
 
 	// выбрать заказы, у которых не окончательный статус
-	rows, err := pgxPool.Query(ctx, selectProcessingOrders)
+	rows, err := pgxPool.Query(ctx, selectProcessingOrders, "INVALID", "PROCESSED")
 	if err != nil {
 		log.Error(err.Error())
 		return

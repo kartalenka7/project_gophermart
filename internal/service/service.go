@@ -77,17 +77,13 @@ func (s ServiceStruct) RgstrUser(ctx context.Context, user model.User) error {
 }
 
 func (s ServiceStruct) AuthUser(ctx context.Context, user model.User) error {
-	var cookie string
 
 	err := s.storage.GetUser(ctx, user)
-
-	s.Log.WithFields(logrus.Fields{
-		"user":   user.Login,
-		"cookie": cookie}).Info("Авторизация пользователя")
-
 	if err != nil {
 		return model.ErrAuthFailed
 	}
+	s.Log.WithFields(logrus.Fields{
+		"user": user.Login}).Info("Аутентификация пользователя")
 
 	return nil
 }
