@@ -146,14 +146,14 @@ func (s server) getOrders(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	s.log.Info("Список заказов успешно возвращен")
-	fmt.Fprint(rw, buf)
 
 	// устанавливаем заголовок Content-Type
 	// для передачи клиенту информации, кодированной в JSO
-	rw.Header().Set("Content-Type", "application/json")
+	rw.Header().Add("Content-Type", "application/json")
 	rw.WriteHeader(http.StatusOK)
 
+	s.log.Info("Список заказов успешно возвращен")
+	fmt.Fprint(rw, buf)
 }
 
 func (s server) withdraw(rw http.ResponseWriter, r *http.Request) {
