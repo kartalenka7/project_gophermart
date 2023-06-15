@@ -227,64 +227,75 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, log *logrus.Logger
 	var orderNumbers []string
 	var accrual int32
 
-	// выбрать заказы, у которых не окончательный статус
-	rows, err := pgxPool.Query(ctx, selectProcessingOrders, "INVALID", "PROCESSED")
-	if err != nil {
-		log.Error(err.Error())
-		return
-	}
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
 
-	for rows.Next() {
-		err := rows.Scan(&orderNumber)
-		if err != nil {
-			log.Error(err.Error())
+	for {
+		select {
+		case <-ticker.C:
+			// выбрать заказы, у которых не окончательный статус
+			rows, err := pgxPool.Query(ctx, selectProcessingOrders, "INVALID", "PROCESSED")
+			if err != nil {
+				log.Error(err.Error())
+				return
+			}
+
+			for rows.Next() {
+				err := rows.Scan(&orderNumber)
+				if err != nil {
+					log.Error(err.Error())
+					return
+				}
+				orderNumbers = append(orderNumbers, orderNumber)
+			}
+
+			pointsResp := model.PointsAppResponse{}
+			client := &http.Client{}
+			for _, v := range orderNumbers {
+				url := "api/orders/" + v
+
+				// http запрос в систему начислений баллов лояльности
+				request, err := http.NewRequest(http.MethodGet, url, nil)
+				if err != nil {
+					log.Error(err.Error())
+					continue
+				}
+				request.Header.Add("Content-Length", "0")
+				resp, err := client.Do(request)
+				if err != nil {
+					log.Error(err.Error())
+					continue
+				}
+				decoder := json.NewDecoder(resp.Body)
+				if err = decoder.Decode(&pointsResp); err != nil {
+					log.Error(err.Error())
+					continue
+				}
+				allResp = append(allResp, pointsResp)
+				resp.Body.Close()
+			}
+
+			// обновить статусы и баллы полученных в ответе заказов
+			batch := &pgx.Batch{}
+			for _, response := range allResp {
+				// переводим в копейки
+				accrual = int32(response.Accrual * 100)
+				batch.Queue(updateOrdersStatus, response.Status, accrual, response.Number)
+				log.WithFields(logrus.Fields{
+					"number":  response.Number,
+					"status":  response.Status,
+					"accrual": accrual,
+				}).Info("Обновление заказа")
+			}
+			batchReq := pgxPool.SendBatch(ctx, batch)
+			defer batchReq.Close()
+			_, err = batchReq.Exec()
+			if err != nil {
+				log.Error(err.Error())
+			}
+		case <-ctx.Done():
+			log.Error("Отмена контекста")
 			return
 		}
-		orderNumbers = append(orderNumbers, orderNumber)
-	}
-
-	pointsResp := model.PointsAppResponse{}
-	client := &http.Client{}
-	for _, v := range orderNumbers {
-		url := "api/orders/" + v
-
-		// http запрос в систему начислений баллов лояльности
-		request, err := http.NewRequest(http.MethodGet, url, nil)
-		if err != nil {
-			log.Error(err.Error())
-			continue
-		}
-		request.Header.Add("Content-Length", "0")
-		resp, err := client.Do(request)
-		if err != nil {
-			log.Error(err.Error())
-			continue
-		}
-		decoder := json.NewDecoder(resp.Body)
-		if err = decoder.Decode(&pointsResp); err != nil {
-			log.Error(err.Error())
-			continue
-		}
-		allResp = append(allResp, pointsResp)
-		resp.Body.Close()
-	}
-
-	// обновить статусы и баллы полученных в ответе заказов
-	batch := &pgx.Batch{}
-	for _, response := range allResp {
-		// переводим в копейки
-		accrual = int32(response.Accrual * 100)
-		batch.Queue(updateOrdersStatus, response.Status, accrual, response.Number)
-		log.WithFields(logrus.Fields{
-			"number":  response.Number,
-			"status":  response.Status,
-			"accrual": accrual,
-		}).Info("Обновление заказа")
-	}
-	batchReq := pgxPool.SendBatch(ctx, batch)
-	defer batchReq.Close()
-	_, err = batchReq.Exec()
-	if err != nil {
-		log.Error(err.Error())
 	}
 }
