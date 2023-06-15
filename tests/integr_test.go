@@ -120,7 +120,7 @@ func TestOrders(t *testing.T) {
 			request: request{
 				url:         "/api/user/orders",
 				contentType: "text/plain"},
-			number: "45612652",
+			number: "457126522",
 			user: model.User{
 				Login:    "user2",
 				Password: "1234",
@@ -192,7 +192,7 @@ func TestOrders(t *testing.T) {
 			defer respOrdersAll.Body.Close()
 
 			assert.Equal(t, http.StatusOK, respOrdersAll.StatusCode)
-
+			assert.Equal(t, respOrdersAll.Header.Get("Content-Type"), "application/json")
 		})
 	}
 }

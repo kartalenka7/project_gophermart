@@ -197,7 +197,8 @@ func (db *DBStruct) GetOrders(ctx context.Context) ([]model.OrdersResponse, erro
 			db.log.Error(err.Error())
 		}
 		//переводим из копеек
-		orderResp.Accrual = float32(accrualInt / 100)
+		orderResp.Accrual = float32(accrualInt)
+		orderResp.Accrual = orderResp.Accrual / 100
 		db.log.WithFields(logrus.Fields{
 			"time":    timeStr,
 			"number":  orderResp.Number,
