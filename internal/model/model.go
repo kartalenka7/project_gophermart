@@ -33,8 +33,14 @@ type PointsAppResponse struct {
 }
 
 type OrderWithdraw struct {
-	Number string `json:"order"`
-	Sum    int32  `json:"sum"`
+	Number   string    `json:"order"`
+	Withdraw float32   `json:"sum"`
+	Time     time.Time `json:"processed_at"`
+}
+
+type Balance struct {
+	Balance   float32 `json:"current"`
+	Withdrawn float32 `json:"withdrawn"`
 }
 
 //описать ошибки для разных кодов ответа
@@ -47,6 +53,8 @@ var (
 	ErrOrderExistsSameUser = errors.New("order number has downloaded by current user")
 	ErrOrderExistsDiffUser = errors.New("order number has downloaded by other user")
 	ErrNotValidOrderNumber = errors.New("order number is not valid")
+	ErrInsufficientBalance = errors.New("insufficient funds")
+	ErrNoWithdrawals       = errors.New("no withdrawals")
 
 	Secretkey = []byte("secret key")
 )

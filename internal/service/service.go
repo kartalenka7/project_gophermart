@@ -18,7 +18,9 @@ type Storer interface {
 	GetUser(ctx context.Context, user model.User) error
 	AddOrder(ctx context.Context, number string) error
 	GetOrders(ctx context.Context) ([]model.OrdersResponse, error)
-	WriteWithdraw() error
+	WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw) error
+	GetBalance(ctx context.Context) (model.Balance, error)
+	GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, error)
 }
 
 type ServiceStruct struct {
@@ -104,6 +106,14 @@ func (s ServiceStruct) GetUserOrders(ctx context.Context) ([]model.OrdersRespons
 	return s.storage.GetOrders(ctx)
 }
 
-func (s ServiceStruct) WriteWithdraw(withdraw model.OrderWithdraw) {
+func (s ServiceStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw) error {
+	return s.storage.WriteWithdraw(ctx, withdraw)
+}
 
+func (s ServiceStruct) GetBalance(ctx context.Context) (model.Balance, error) {
+	return s.storage.GetBalance(ctx)
+}
+
+func (s ServiceStruct) GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, error) {
+	return s.storage.GetWithdrawals(ctx)
 }

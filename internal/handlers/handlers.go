@@ -21,7 +21,9 @@ type ServiceIntf interface {
 	AddUserOrder(ctx context.Context, number string) error
 	GetUserOrders(ctx context.Context) ([]model.OrdersResponse, error)
 	ParseUserCredentials(r *http.Request) (model.User, error)
-	WriteWithdraw(withdraw model.OrderWithdraw)
+	WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw) error
+	GetBalance(ctx context.Context) (model.Balance, error)
+	GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, error)
 }
 
 func (s server) userRegstr(rw http.ResponseWriter, r *http.Request) {
@@ -158,16 +160,89 @@ func (s server) getOrders(rw http.ResponseWriter, r *http.Request) {
 
 func (s server) withdraw(rw http.ResponseWriter, r *http.Request) {
 	var withdraw model.OrderWithdraw
-	//проверить авторизацию пользователя
 
-	// передать номер заказа и число баллов для списания
-	s.service.WriteWithdraw(withdraw)
+	s.log.Info("Попытка списания средств")
+
+	// проверить формат запроса
+	if r.Header.Get("Content-Type") != "application/json" {
+		s.log.Error("Неверный Content-Type")
+		rw.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// получаем из body сумму списания и номер заказа
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&withdraw); err != nil {
+		s.log.Error(err.Error())
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.service.WriteWithdraw(r.Context(), withdraw); err != nil {
+		if errors.Is(err, model.ErrWrongRequest) {
+			//422 — неверный номер заказа;
+			rw.WriteHeader(http.StatusUnprocessableEntity)
+			return
+		}
+		if errors.Is(err, model.ErrInsufficientBalance) {
+			//402 — на счету недостаточно средств
+			rw.WriteHeader(http.StatusPaymentRequired)
+			return
+		}
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	s.log.Info("Списание произошло")
+	rw.WriteHeader(http.StatusOK)
 }
 
 func (s server) getWithdrawals(rw http.ResponseWriter, r *http.Request) {
-
+	s.log.Info("Получение информации о выводе средств")
+	withdrawals, err := s.service.GetWithdrawals(r.Context())
+	if err != nil {
+		if errors.Is(err, model.ErrNoWithdrawals) {
+			rw.WriteHeader(http.StatusNoContent)
+			return
+		}
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	buf := bytes.NewBuffer([]byte{})
+	encoder := json.NewEncoder(buf)
+	encoder.SetEscapeHTML(false)
+	err = encoder.Encode(withdrawals)
+	if err != nil {
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	s.log.Info("Информация о выводе средств получена")
+	rw.WriteHeader(http.StatusOK)
 }
 
 func (s server) getBalance(rw http.ResponseWriter, r *http.Request) {
+	s.log.Info("Получение баланса")
+
+	balance, err := s.service.GetBalance(r.Context())
+	if err != nil {
+		s.log.Error(err.Error())
+		rw.WriteHeader(http.StatusInternalServerError)
+	}
+
+	buf := bytes.NewBuffer([]byte{})
+	encoder := json.NewEncoder(buf)
+	encoder.SetEscapeHTML(false)
+	err = encoder.Encode(balance)
+	if err != nil {
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// устанавливаем заголовок Content-Type
+	// для передачи клиенту информации, кодированной в JSON
+	rw.Header().Add("Content-Type", "application/json")
+	rw.WriteHeader(http.StatusOK)
+
+	s.log.Info("Баланс пользователя успешно возвращен")
+	fmt.Fprint(rw, buf)
 
 }

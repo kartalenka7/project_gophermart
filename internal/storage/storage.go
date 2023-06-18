@@ -26,7 +26,7 @@ var (
 						)`
 	createOrdersTable = `CREATE TABLE IF NOT EXISTS
 						 orders(
-							number TEXT PRIMARY KEY UNIQUE,
+							number TEXT PRIMARY KEY,
 							login TEXT,
 							time   TEXT,
 							status TEXT,
@@ -34,9 +34,9 @@ var (
 						 )`
 	createHistoryTable = `CREATE TABLE IF NOT EXISTS
 							ordersHistory(
-								number   TEXT,
-								withdraw INT,
-								time     TEXT
+								number      TEXT,
+								withdraw    INT,
+								time        TEXT
 							)`
 
 	insertUser = `INSERT INTO users(login, password) VALUES($1, $2)`
@@ -48,6 +48,16 @@ var (
 
 	selectProcessingOrders = `SELECT number FROM orders WHERE status != $1 AND status != $2`
 	updateOrdersStatus     = `UPDATE orders SET status = $1, accrual = $2 WHERE number = $3`
+
+	addOrderHistory   = `INSERT INTO ordersHistory(number, withdraw, time) VALUES($1, $2, $3)`
+	selectUserHistory = `SELECT h.withdraw 
+						 FROM ordersHistory as h 
+						 JOIN orders AS o ON h~number = o~number
+						 WHERE o.login = $1`
+	selectWithdrawHistory = `SELECT h.number, h.withdraw, h.time
+						 FROM ordersHistory as h 
+						 JOIN orders AS o ON h~number = o~number
+						 WHERE o.login = $1`
 )
 
 type DBStruct struct {
@@ -86,6 +96,11 @@ func InitConnection(ctx context.Context, connString string, accrualSys string, l
 	}
 
 	if _, err = pgxPool.Exec(ctx, createOrdersTable); err != nil {
+		log.Error(err.Error())
+		return nil, err
+	}
+
+	if _, err = pgxPool.Exec(ctx, createHistoryTable); err != nil {
 		log.Error(err.Error())
 		return nil, err
 	}
@@ -184,7 +199,7 @@ func (db *DBStruct) GetOrders(ctx context.Context) ([]model.OrdersResponse, erro
 		db.log.Error(err.Error())
 		return nil, err
 	}
-
+	defer rows.Close()
 	for rows.Next() {
 		err := rows.Scan(&orderResp.Number, &orderResp.Login, &timeStr, &orderResp.Status, &accrualInt)
 		if err != nil {
@@ -209,7 +224,7 @@ func (db *DBStruct) GetOrders(ctx context.Context) ([]model.OrdersResponse, erro
 	}
 
 	if rows.Err() != nil {
-		db.log.Error(err.Error())
+		db.log.Error(rows.Err().Error())
 		return nil, err
 	}
 
@@ -224,14 +239,50 @@ func (db *DBStruct) GetOrders(ctx context.Context) ([]model.OrdersResponse, erro
 	return orders, nil
 }
 
-func (db *DBStruct) WriteWithdraw() error {
-	// запрос select в таблицу orders, проверяем что номер заказа существует
-	//422 — неверный номер заказа;
+func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw) error {
+	var balance int32
+	var balanceFloat float32
+	var balanceAll float32
 
-	// запрос select в таблицу users, проверка, что withdraw < balance
-	//402 — на счету недостаточно средств
+	// проверяем что номер заказа существует
+	row := db.pgxPool.QueryRow(ctx, selectOrder, withdraw.Number)
+	if err := row.Scan(); err != nil {
+		db.log.Error(err.Error())
+		return model.ErrWrongRequest
+	}
 
-	// запрос insert в таблицу OrdersHistory
+	login := ctx.Value(model.KeyLogin).(string)
+	// проверяем, что у пользователя достаточно баллов для списания
+	rows, err := db.pgxPool.Query(ctx, selectUserHistory, login)
+	if err != nil {
+		db.log.Error(err.Error())
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		err = rows.Scan(&balance)
+		if err != nil {
+			db.log.Error(err.Error())
+			return err
+		}
+		balanceFloat = float32(balance)
+		balanceAll += balanceFloat / 100
+	}
+	if rows.Err() != nil {
+		db.log.Error(rows.Err().Error())
+		return rows.Err()
+	}
+	if balanceAll < float32(withdraw.Withdraw) {
+		db.log.Error(model.ErrInsufficientBalance.Error())
+		return model.ErrInsufficientBalance
+	}
+
+	// Добавляем запись списания в OrdersHistory
+	_, err = db.pgxPool.Exec(ctx, addOrderHistory, withdraw.Number, -withdraw.Withdraw, time.Now().Format(time.RFC3339))
+	if err != nil {
+		db.log.Error(err.Error())
+		return err
+	}
 	return nil
 }
 
@@ -302,6 +353,7 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, accrualSys string,
 				// переводим в копейки
 				accrual = int32(response.Accrual * 100)
 				batch.Queue(updateOrdersStatus, response.Status, accrual, response.Number)
+				batch.Queue(addOrderHistory, response.Number, accrual, time.Now().Format(time.RFC3339))
 				log.WithFields(logrus.Fields{
 					"number":  response.Number,
 					"status":  response.Status,
@@ -319,4 +371,68 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, accrualSys string,
 			return
 		}
 	}
+}
+
+func (db *DBStruct) GetBalance(ctx context.Context) (model.Balance, error) {
+	var balance model.Balance
+	var withdrawFloat float32
+	var withdraw int32
+
+	login := ctx.Value(model.KeyLogin).(string)
+
+	rows, err := db.pgxPool.Query(ctx, selectUserHistory, login)
+	if err != nil {
+		return model.Balance{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		err = rows.Scan(&withdraw)
+		if err != nil {
+			db.log.Error(err.Error())
+			return model.Balance{}, err
+		}
+		withdrawFloat = float32(withdraw)
+		balance.Balance += withdrawFloat / 100
+		if withdrawFloat < 0 {
+			balance.Withdrawn += withdrawFloat / 100
+		}
+	}
+
+	if rows.Err() != nil {
+		db.log.Error(rows.Err().Error())
+		return model.Balance{}, rows.Err()
+	}
+
+	return balance, nil
+}
+
+func (db *DBStruct) GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, error) {
+	var userWithdraw model.OrderWithdraw
+	var allWithdrawals []model.OrderWithdraw
+	var withdraw int32
+
+	rows, err := db.pgxPool.Query(ctx, selectWithdrawHistory, ctx.Value(model.KeyLogin).(string))
+	if err != nil {
+		db.log.Error(err.Error())
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		err = rows.Scan(&userWithdraw.Number, &withdraw, &userWithdraw.Time)
+		if err != nil {
+			db.log.Error(err.Error())
+			return nil, err
+		}
+		userWithdraw.Withdraw = float32(withdraw / 100)
+		allWithdrawals = append(allWithdrawals, userWithdraw)
+	}
+	if err := rows.Err(); err != nil {
+		db.log.Error(err.Error())
+		return nil, err
+	}
+	if allWithdrawals == nil {
+		db.log.Error(model.ErrNoWithdrawals.Error())
+		return nil, model.ErrNoWithdrawals
+	}
+	return allWithdrawals, nil
 }
