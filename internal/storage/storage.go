@@ -244,14 +244,6 @@ func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithd
 	var balanceFloat float32
 	var balanceAll float32
 
-	// проверяем что номер заказа существует
-	db.log.WithFields(logrus.Fields{"number": withdraw.Number}).Info("Проверяем что заказ существует")
-	row := db.pgxPool.QueryRow(ctx, selectOrder, withdraw.Number)
-	if err := row.Scan(); err != nil {
-		db.log.Error(err.Error())
-		return model.ErrWrongRequest
-	}
-
 	login := ctx.Value(model.KeyLogin).(string)
 	// проверяем, что у пользователя достаточно баллов для списания
 	rows, err := db.pgxPool.Query(ctx, selectUserHistory, login)
@@ -294,7 +286,7 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, accrualSys string,
 	var orderNumbers []string
 	var accrual int32
 
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {

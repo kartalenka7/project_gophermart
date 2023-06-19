@@ -107,6 +107,11 @@ func (s ServiceStruct) GetUserOrders(ctx context.Context) ([]model.OrdersRespons
 }
 
 func (s ServiceStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw) error {
+	//проверить формат номера заказа
+	if !config.CheckLuhnAlg(withdraw.Number) {
+		s.Log.Error(model.ErrNotValidOrderNumber.Error())
+		return model.ErrNotValidOrderNumber
+	}
 	return s.storage.WriteWithdraw(ctx, withdraw)
 }
 

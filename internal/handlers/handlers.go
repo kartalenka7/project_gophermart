@@ -179,7 +179,7 @@ func (s server) withdraw(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.service.WriteWithdraw(r.Context(), withdraw); err != nil {
-		if errors.Is(err, model.ErrWrongRequest) {
+		if errors.Is(err, model.ErrNotValidOrderNumber) {
 			//422 — неверный номер заказа;
 			rw.WriteHeader(http.StatusUnprocessableEntity)
 			return
