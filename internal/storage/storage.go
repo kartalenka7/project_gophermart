@@ -247,7 +247,7 @@ func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithd
 	// проверяем что номер заказа существует
 	row := db.pgxPool.QueryRow(ctx, selectOrder, withdraw.Number)
 	if err := row.Scan(); err != nil {
-		db.log.Error(err.Error())
+		db.log.WithFields(logrus.Fields{"number": withdraw.Number}).Error(err.Error())
 		return model.ErrWrongRequest
 	}
 
@@ -404,6 +404,7 @@ func (db *DBStruct) GetBalance(ctx context.Context) (model.Balance, error) {
 		return model.Balance{}, rows.Err()
 	}
 
+	db.log.WithFields(logrus.Fields{"balance": balance}).Info("Баланс")
 	return balance, nil
 }
 
@@ -424,7 +425,15 @@ func (db *DBStruct) GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, 
 			db.log.Error(err.Error())
 			return nil, err
 		}
+		if withdraw > 0 {
+			continue
+		}
 		userWithdraw.Withdraw = float32(withdraw / 100)
+		db.log.WithFields(logrus.Fields{
+			"number":   userWithdraw.Number,
+			"withdraw": userWithdraw.Withdraw,
+			"time":     userWithdraw.Time,
+		}).Info("Обновление заказа")
 		allWithdrawals = append(allWithdrawals, userWithdraw)
 	}
 	if err := rows.Err(); err != nil {
@@ -435,5 +444,10 @@ func (db *DBStruct) GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, 
 		db.log.Error(model.ErrNoWithdrawals.Error())
 		return nil, model.ErrNoWithdrawals
 	}
+
+	// сортируем записи списаний
+	sort.SliceStable(allWithdrawals, func(i, j int) bool {
+		return allWithdrawals[i].Time.Before(allWithdrawals[j].Time)
+	})
 	return allWithdrawals, nil
 }
