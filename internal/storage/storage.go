@@ -24,8 +24,7 @@ var (
 							login    TEXT PRIMARY KEY,
 							password TEXT
 						)`
-	createOrdersTable = `DROP TABLE orders IF EXISTS;
-						 CREATE TABLE IF NOT EXISTS
+	createOrdersTable = `CREATE TABLE IF NOT EXISTS
 						 orders(
 							number TEXT PRIMARY KEY,
 							login TEXT,
