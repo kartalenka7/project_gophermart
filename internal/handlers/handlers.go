@@ -12,6 +12,7 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/kartalenka7/project_gophermart/internal/model"
+	"github.com/sirupsen/logrus"
 )
 
 // интерфейс для взаимодействия с сервисом
@@ -215,7 +216,8 @@ func (s server) getWithdrawals(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	s.log.Info("Информация о выводе средств получена")
+	s.log.WithFields(logrus.Fields{"withdrawals": withdrawals}).Info("Информация о выводе средств получена")
+	rw.Header().Add("Content-Type", "application/json")
 	rw.WriteHeader(http.StatusOK)
 	fmt.Fprint(rw, buf)
 }
