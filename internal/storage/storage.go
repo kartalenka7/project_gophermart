@@ -43,10 +43,10 @@ var (
 	selectUser = `SELECT password FROM users WHERE login = $1`
 
 	selectOrder      = `SELECT login FROM orders WHERE number = $1`
-	selectUserOrders = `SELECT number, login, time, status, accrual FROM orders WHERE login = $1`
+	selectUserOrders = `SELECT number, login, time, status, accrual FROM orders WHERE login = $1 AND time IS NOT NULL`
 	insertOrder      = `INSERT INTO orders(number, login, time, status, accrual) VALUES($1, $2, $3, 'NEW', 0)`
 
-	selectProcessingOrders = `SELECT number FROM orders WHERE status != $1 AND status != $2`
+	selectProcessingOrders = `SELECT number FROM orders WHERE status != $1 AND status != $2 AND time IS NOT NULL`
 	updateOrdersStatus     = `UPDATE orders SET status = $1, accrual = $2 WHERE number = $3`
 
 	addOrderHistory   = `INSERT INTO ordersHistory(number, withdraw, time) VALUES($1, $2, $3)`
@@ -259,6 +259,7 @@ func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithd
 			return err
 		}
 		balanceFloat = float32(balance)
+		db.log.WithFields(logrus.Fields{"balance": balance}).Info("Накапливаем баланс")
 		balanceAll += balanceFloat / 100
 	}
 	if rows.Err() != nil {
@@ -280,6 +281,7 @@ func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithd
 		db.log.Error(err.Error())
 		return err
 	}
+	_, err = db.pgxPool.Exec(ctx, insertOrder, withdraw.Number, login)
 	return nil
 }
 
@@ -390,7 +392,7 @@ func (db *DBStruct) GetBalance(ctx context.Context) (model.Balance, error) {
 			return model.Balance{}, err
 		}
 		withdrawFloat = float32(withdraw)
-		db.log.WithFields(logrus.Fields{"withdraw": withdraw}).Info("Списание")
+		db.log.WithFields(logrus.Fields{"withdraw": withdraw}).Info("Баланс")
 		balance.Balance += withdrawFloat / 100
 		if withdrawFloat < 0 {
 			balance.Withdrawn += withdrawFloat / 100
