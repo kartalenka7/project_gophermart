@@ -270,6 +270,10 @@ func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithd
 		return model.ErrInsufficientBalance
 	}
 
+	db.log.WithFields(logrus.Fields{
+		"number":   withdraw.Number,
+		"withdraw": -withdraw.Withdraw,
+	}).Info("Запись в таблицу OrdersHistory")
 	// Добавляем запись списания в OrdersHistory
 	_, err = db.pgxPool.Exec(ctx, addOrderHistory, withdraw.Number, -withdraw.Withdraw, time.Now().Format(time.RFC3339))
 	if err != nil {
@@ -386,6 +390,7 @@ func (db *DBStruct) GetBalance(ctx context.Context) (model.Balance, error) {
 			return model.Balance{}, err
 		}
 		withdrawFloat = float32(withdraw)
+		db.log.WithFields(logrus.Fields{"withdraw": withdraw}).Info("Списание")
 		balance.Balance += withdrawFloat / 100
 		if withdrawFloat < 0 {
 			balance.Withdrawn += withdrawFloat / 100
