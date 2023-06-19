@@ -245,9 +245,10 @@ func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithd
 	var balanceAll float32
 
 	// проверяем что номер заказа существует
+	db.log.WithFields(logrus.Fields{"number": withdraw.Number}).Info("Проверяем что заказ существует")
 	row := db.pgxPool.QueryRow(ctx, selectOrder, withdraw.Number)
 	if err := row.Scan(); err != nil {
-		db.log.WithFields(logrus.Fields{"number": withdraw.Number}).Error(err.Error())
+		db.log.Error(err.Error())
 		return model.ErrWrongRequest
 	}
 
@@ -412,6 +413,7 @@ func (db *DBStruct) GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, 
 	var userWithdraw model.OrderWithdraw
 	var allWithdrawals []model.OrderWithdraw
 	var withdraw int32
+	var timeUpl string
 
 	rows, err := db.pgxPool.Query(ctx, selectWithdrawHistory, ctx.Value(model.KeyLogin).(string))
 	if err != nil {
@@ -420,7 +422,7 @@ func (db *DBStruct) GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, 
 	}
 	defer rows.Close()
 	for rows.Next() {
-		err = rows.Scan(&userWithdraw.Number, &withdraw, &userWithdraw.Time)
+		err = rows.Scan(&userWithdraw.Number, &withdraw, &timeUpl)
 		if err != nil {
 			db.log.Error(err.Error())
 			return nil, err
@@ -428,12 +430,16 @@ func (db *DBStruct) GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, 
 		if withdraw > 0 {
 			continue
 		}
+		userWithdraw.Time, err = time.Parse(time.RFC3339, timeUpl)
+		if err != nil {
+			db.log.Error(err.Error())
+		}
 		userWithdraw.Withdraw = float32(withdraw / 100)
 		db.log.WithFields(logrus.Fields{
 			"number":   userWithdraw.Number,
 			"withdraw": userWithdraw.Withdraw,
 			"time":     userWithdraw.Time,
-		}).Info("Обновление заказа")
+		}).Info("Списание")
 		allWithdrawals = append(allWithdrawals, userWithdraw)
 	}
 	if err := rows.Err(); err != nil {
