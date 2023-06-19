@@ -406,6 +406,7 @@ func (db *DBStruct) GetBalance(ctx context.Context) (model.Balance, error) {
 		}
 	}
 
+	balance.Withdrawn = -balance.Withdrawn
 	if rows.Err() != nil {
 		db.log.Error(rows.Err().Error())
 		return model.Balance{}, rows.Err()
