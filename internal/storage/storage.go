@@ -15,6 +15,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/kartalenka7/project_gophermart/internal/config"
 	"github.com/kartalenka7/project_gophermart/internal/model"
 )
 
@@ -212,7 +213,7 @@ func (db *DBStruct) GetOrders(ctx context.Context) ([]model.OrdersResponse, erro
 			db.log.Error(err.Error())
 		}
 		//переводим из копеек
-		orderResp.Accrual = float32(accrualInt)
+		orderResp.Accrual = float64(accrualInt)
 		orderResp.Accrual = orderResp.Accrual / 100
 		db.log.WithFields(logrus.Fields{
 			"time":    timeStr,
@@ -241,8 +242,8 @@ func (db *DBStruct) GetOrders(ctx context.Context) ([]model.OrdersResponse, erro
 
 func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw) error {
 	var balance int32
-	var balanceFloat float32
-	var balanceAll float32
+	var balanceFloat float64
+	var balanceAll float64
 
 	login := ctx.Value(model.KeyLogin).(string)
 	// проверяем, что у пользователя достаточно баллов для списания
@@ -258,7 +259,7 @@ func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithd
 			db.log.Error(err.Error())
 			return err
 		}
-		balanceFloat = float32(balance)
+		balanceFloat = float64(balance)
 		db.log.WithFields(logrus.Fields{"balance": balance}).Info("Накапливаем баланс")
 		balanceAll += balanceFloat / 100
 	}
@@ -266,7 +267,7 @@ func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithd
 		db.log.Error(rows.Err().Error())
 		return rows.Err()
 	}
-	if balanceAll < float32(withdraw.Withdraw) {
+	if balanceAll < float64(withdraw.Withdraw) {
 		db.log.Error(model.ErrInsufficientBalance.Error())
 		return model.ErrInsufficientBalance
 	}
@@ -381,7 +382,7 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, accrualSys string,
 
 func (db *DBStruct) GetBalance(ctx context.Context) (model.Balance, error) {
 	var balance model.Balance
-	var withdrawFloat float32
+	var withdrawFloat float64
 	var withdraw int32
 
 	login := ctx.Value(model.KeyLogin).(string)
@@ -398,7 +399,7 @@ func (db *DBStruct) GetBalance(ctx context.Context) (model.Balance, error) {
 			db.log.Error(err.Error())
 			return model.Balance{}, err
 		}
-		withdrawFloat = float32(withdraw)
+		withdrawFloat = float64(withdraw)
 		db.log.WithFields(logrus.Fields{"withdraw": withdraw}).Info("Баланс")
 		balance.Balance += withdrawFloat / 100
 		if withdrawFloat < 0 {
@@ -406,7 +407,8 @@ func (db *DBStruct) GetBalance(ctx context.Context) (model.Balance, error) {
 		}
 	}
 
-	balance.Withdrawn = -balance.Withdrawn
+	balance.Balance = config.Round(balance.Balance, 2)
+	balance.Withdrawn = config.Round(-balance.Withdrawn, 2)
 	if rows.Err() != nil {
 		db.log.Error(rows.Err().Error())
 		return model.Balance{}, rows.Err()
@@ -441,7 +443,7 @@ func (db *DBStruct) GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, 
 		if err != nil {
 			db.log.Error(err.Error())
 		}
-		userWithdraw.Withdraw = float32(withdraw / 100)
+		userWithdraw.Withdraw = config.Round(float64(withdraw/100), 2)
 		db.log.WithFields(logrus.Fields{
 			"number":   userWithdraw.Number,
 			"withdraw": userWithdraw.Withdraw,

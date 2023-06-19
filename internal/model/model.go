@@ -21,7 +21,7 @@ type Token struct {
 type OrdersResponse struct {
 	Number  string    `json:"number"`
 	Status  string    `json:"status"`
-	Accrual float32   `json:"accrual"`
+	Accrual float64   `json:"accrual"`
 	Time    time.Time `json:"uploaded_at"`
 	Login   string
 }
@@ -29,18 +29,18 @@ type OrdersResponse struct {
 type PointsAppResponse struct {
 	Number  string  `json:"order"`
 	Status  string  `json:"status"`
-	Accrual float32 `json:"accrual"` //кол-во баллов, начисленное за заказ
+	Accrual float64 `json:"accrual"` //кол-во баллов, начисленное за заказ
 }
 
 type OrderWithdraw struct {
 	Number   string    `json:"order"`
-	Withdraw float32   `json:"sum"`
+	Withdraw float64   `json:"sum"`
 	Time     time.Time `json:"processed_at"`
 }
 
 type Balance struct {
-	Balance   float32 `json:"current"`
-	Withdrawn float32 `json:"withdrawn"`
+	Balance   float64 `json:"current"`
+	Withdrawn float64 `json:"withdrawn"`
 }
 
 //описать ошибки для разных кодов ответа

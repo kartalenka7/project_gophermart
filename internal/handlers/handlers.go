@@ -216,8 +216,8 @@ func (s server) getWithdrawals(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("Информация о выводе средств получена")
-	fmt.Fprint(rw, buf)
 	rw.WriteHeader(http.StatusOK)
+	fmt.Fprint(rw, buf)
 }
 
 func (s server) getBalance(rw http.ResponseWriter, r *http.Request) {
