@@ -443,7 +443,9 @@ func (db *DBStruct) GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, 
 		if err != nil {
 			db.log.Error(err.Error())
 		}
-		userWithdraw.Withdraw = -float64(withdraw / 100)
+		userWithdraw.Withdraw = float64(withdraw)
+		userWithdraw.Withdraw = -userWithdraw.Withdraw / 100
+
 		db.log.WithFields(logrus.Fields{
 			"number":   userWithdraw.Number,
 			"withdraw": userWithdraw.Withdraw,
