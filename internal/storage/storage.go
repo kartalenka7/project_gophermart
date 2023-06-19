@@ -24,7 +24,8 @@ var (
 							login    TEXT PRIMARY KEY,
 							password TEXT
 						)`
-	createOrdersTable = `CREATE TABLE IF NOT EXISTS
+	createOrdersTable = `DROP TABLE orders IF EXISTS;
+						 CREATE TABLE IF NOT EXISTS
 						 orders(
 							number TEXT PRIMARY KEY,
 							login TEXT,
@@ -273,7 +274,7 @@ func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithd
 	withdraw.Withdraw = -withdraw.Withdraw * 100
 	db.log.WithFields(logrus.Fields{
 		"number":   withdraw.Number,
-		"withdraw": -withdraw.Withdraw,
+		"withdraw": withdraw.Withdraw,
 	}).Info("Запись в таблицу OrdersHistory")
 	// Добавляем запись списания в OrdersHistory
 	_, err = db.pgxPool.Exec(ctx, addOrderHistory, withdraw.Number, withdraw.Withdraw, time.Now().Format(time.RFC3339))
@@ -285,10 +286,9 @@ func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithd
 		"number": withdraw.Number,
 		"login":  login,
 	}).Info("Запись в таблицу orders")
-	_, err = db.pgxPool.Exec(ctx, insertOrder, withdraw.Number, login)
+	_, err = db.pgxPool.Exec(ctx, insertOrder, withdraw.Number, login, nil)
 	if err != nil {
 		db.log.Error(err.Error())
-		return err
 	}
 	return nil
 }
