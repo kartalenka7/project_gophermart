@@ -224,7 +224,6 @@ func (s server) getBalance(rw http.ResponseWriter, r *http.Request) {
 
 	balance, err := s.service.GetBalance(r.Context())
 	if err != nil {
-		s.log.Error(err.Error())
 		rw.WriteHeader(http.StatusInternalServerError)
 	}
 

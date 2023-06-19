@@ -52,11 +52,11 @@ var (
 	addOrderHistory   = `INSERT INTO ordersHistory(number, withdraw, time) VALUES($1, $2, $3)`
 	selectUserHistory = `SELECT h.withdraw 
 						 FROM ordersHistory as h 
-						 JOIN orders AS o ON h~number = o~number
+						 JOIN orders AS o ON o.number = h.number 
 						 WHERE o.login = $1`
 	selectWithdrawHistory = `SELECT h.number, h.withdraw, h.time
 						 FROM ordersHistory as h 
-						 JOIN orders AS o ON h~number = o~number
+						 JOIN orders AS o ON h.number = o.number
 						 WHERE o.login = $1`
 )
 
@@ -382,6 +382,7 @@ func (db *DBStruct) GetBalance(ctx context.Context) (model.Balance, error) {
 
 	rows, err := db.pgxPool.Query(ctx, selectUserHistory, login)
 	if err != nil {
+		db.log.Error(rows.Err().Error())
 		return model.Balance{}, err
 	}
 	defer rows.Close()
