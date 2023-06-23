@@ -5,12 +5,13 @@ import (
 
 	"github.com/kartalenka7/project_gophermart/internal/config"
 	"github.com/kartalenka7/project_gophermart/internal/handlers"
+	"github.com/kartalenka7/project_gophermart/internal/logger"
 	"github.com/kartalenka7/project_gophermart/internal/service"
 	"github.com/kartalenka7/project_gophermart/internal/storage"
 )
 
 func main() {
-	log := config.InitLog()
+	log := logger.InitLog()
 
 	cfg, err := config.GetConfig(log)
 	if err != nil {

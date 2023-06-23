@@ -6,11 +6,11 @@ import (
 )
 
 type server struct {
-	service ServiceIntf
+	service ServiceInterface
 	log     *logrus.Logger
 }
 
-func NewRouter(service ServiceIntf, log *logrus.Logger) chi.Router {
+func NewRouter(service ServiceInterface, log *logrus.Logger) chi.Router {
 	log.Info("Инициализируем роутер")
 	router := chi.NewRouter()
 	server := &server{

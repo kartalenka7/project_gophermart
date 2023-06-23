@@ -55,6 +55,7 @@ var (
 	ErrNotValidOrderNumber = errors.New("order number is not valid")
 	ErrInsufficientBalance = errors.New("insufficient funds")
 	ErrNoWithdrawals       = errors.New("no withdrawals")
+	ErrCastingType         = errors.New("casting types error")
 
 	Secretkey = []byte("secret key")
 )

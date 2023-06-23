@@ -1,6 +1,12 @@
-package config
+package utils
 
-import "math"
+import (
+	"math"
+	"net/http"
+
+	"github.com/dgrijalva/jwt-go"
+	"github.com/kartalenka7/project_gophermart/internal/model"
+)
 
 const (
 	asciiZero = 48
@@ -44,4 +50,16 @@ func Round(x float64, prec int) float64 {
 	}
 
 	return rounder / pow
+}
+
+//Создать новый токен JWT для учётной записи
+func AddAuthoriztionHeader(rw http.ResponseWriter, user model.User) error {
+	tk := &model.Token{Login: user.Login}
+	token := jwt.NewWithClaims(jwt.GetSigningMethod("HS256"), tk)
+	tokenString, err := token.SignedString([]byte("secret"))
+	if err != nil {
+		return err
+	}
+	rw.Header().Add("Authorization", tokenString)
+	return nil
 }

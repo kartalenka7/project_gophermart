@@ -13,10 +13,9 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/bcrypt"
 
-	"github.com/kartalenka7/project_gophermart/internal/config"
 	"github.com/kartalenka7/project_gophermart/internal/model"
+	"github.com/kartalenka7/project_gophermart/internal/utils"
 )
 
 var (
@@ -132,27 +131,20 @@ func (db *DBStruct) AddUser(ctx context.Context, user model.User) error {
 	return err
 }
 
-func (db *DBStruct) GetUser(ctx context.Context, user model.User) error {
+func (db *DBStruct) AuthUser(ctx context.Context, user model.User) (string, error) {
 	var checkUser model.User
 	row := db.pgxPool.QueryRow(ctx, selectUser, user.Login)
 	err := row.Scan(&checkUser.Password)
 	if err != nil {
 		db.log.Error(err.Error())
-		return err
+		return "", err
 	}
 
-	// проверить хэш пароля
-	err = bcrypt.CompareHashAndPassword([]byte(checkUser.Password), []byte(user.Password))
-	if err != nil {
-		db.log.Error(err.Error())
-	}
-	return err
+	return checkUser.Password, err
 }
 
-func (db *DBStruct) AddOrder(ctx context.Context, number string) error {
+func (db *DBStruct) AddOrder(ctx context.Context, number string, login string) error {
 	var user string
-
-	login := ctx.Value(model.KeyLogin).(string)
 
 	// форматировать текущий момент времени в строку
 	t := time.Now().Format(time.RFC3339)
@@ -183,17 +175,16 @@ func (db *DBStruct) AddOrder(ctx context.Context, number string) error {
 	return err
 }
 
-func (db *DBStruct) GetOrders(ctx context.Context) ([]model.OrdersResponse, error) {
+func (db *DBStruct) GetOrders(ctx context.Context, login string) ([]model.OrdersResponse, error) {
 	var timeStr string
 	var accrualInt int32
 	var orderResp model.OrdersResponse
 	var orders []model.OrdersResponse
 
-	login := ctx.Value(model.KeyLogin).(string)
-
-	db.log.WithFields(logrus.Fields{
-		"login": login,
-	}).Info("Выбираем заказы для пользователя")
+	db.log.WithFields(
+		logrus.Fields{
+			"login": login,
+		}).Info("Выбираем заказы для пользователя")
 	// выбираем список запросов для авторизованного пользователя
 	rows, err := db.pgxPool.Query(ctx, selectUserOrders, login)
 	if err != nil {
@@ -240,44 +231,40 @@ func (db *DBStruct) GetOrders(ctx context.Context) ([]model.OrdersResponse, erro
 	return orders, nil
 }
 
-func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw) error {
+func (db *DBStruct) CalculateBalance(ctx context.Context, login string) (int32, error) {
 	var balance int32
-	var balanceFloat float64
-	var balanceAll float64
+	var balanceAll int32
 
-	login := ctx.Value(model.KeyLogin).(string)
-	// проверяем, что у пользователя достаточно баллов для списания
+	// определяем баланс пользователя
 	rows, err := db.pgxPool.Query(ctx, selectUserHistory, login)
 	if err != nil {
 		db.log.Error(err.Error())
-		return err
+		return 0, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		err = rows.Scan(&balance)
 		if err != nil {
 			db.log.Error(err.Error())
-			return err
+			return 0, err
 		}
-		balanceFloat = float64(balance)
 		db.log.WithFields(logrus.Fields{"balance": balance}).Info("Накапливаем баланс")
-		balanceAll += balanceFloat / 100
+		balanceAll += balance
 	}
 	if rows.Err() != nil {
 		db.log.Error(rows.Err().Error())
-		return rows.Err()
+		return 0, rows.Err()
 	}
-	if balanceAll < float64(withdraw.Withdraw) {
-		db.log.Error(model.ErrInsufficientBalance.Error())
-		return model.ErrInsufficientBalance
-	}
-	withdraw.Withdraw = -withdraw.Withdraw * 100
+	return balance, nil
+}
+
+func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw, login string) error {
 	db.log.WithFields(logrus.Fields{
 		"number":   withdraw.Number,
 		"withdraw": withdraw.Withdraw,
 	}).Info("Запись в таблицу OrdersHistory")
 	// Добавляем запись списания в OrdersHistory
-	_, err = db.pgxPool.Exec(ctx, addOrderHistory, withdraw.Number, withdraw.Withdraw, time.Now().Format(time.RFC3339))
+	_, err := db.pgxPool.Exec(ctx, addOrderHistory, withdraw.Number, withdraw.Withdraw, time.Now().Format(time.RFC3339))
 	if err != nil {
 		db.log.Error(err.Error())
 		return err
@@ -380,12 +367,10 @@ func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, accrualSys string,
 	}
 }
 
-func (db *DBStruct) GetBalance(ctx context.Context) (model.Balance, error) {
+func (db *DBStruct) GetBalance(ctx context.Context, login string) (model.Balance, error) {
 	var balance model.Balance
 	var withdrawFloat float64
 	var withdraw int32
-
-	login := ctx.Value(model.KeyLogin).(string)
 
 	rows, err := db.pgxPool.Query(ctx, selectUserHistory, login)
 	if err != nil {
@@ -407,8 +392,8 @@ func (db *DBStruct) GetBalance(ctx context.Context) (model.Balance, error) {
 		}
 	}
 
-	balance.Balance = config.Round(balance.Balance, 2)
-	balance.Withdrawn = config.Round(-balance.Withdrawn, 2)
+	balance.Balance = utils.Round(balance.Balance, 2)
+	balance.Withdrawn = utils.Round(-balance.Withdrawn, 2)
 	if rows.Err() != nil {
 		db.log.Error(rows.Err().Error())
 		return model.Balance{}, rows.Err()
@@ -418,13 +403,13 @@ func (db *DBStruct) GetBalance(ctx context.Context) (model.Balance, error) {
 	return balance, nil
 }
 
-func (db *DBStruct) GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, error) {
+func (db *DBStruct) GetWithdrawals(ctx context.Context, login string) ([]model.OrderWithdraw, error) {
 	var userWithdraw model.OrderWithdraw
 	var allWithdrawals []model.OrderWithdraw
 	var withdraw int32
 	var timeUpl string
 
-	rows, err := db.pgxPool.Query(ctx, selectWithdrawHistory, ctx.Value(model.KeyLogin).(string))
+	rows, err := db.pgxPool.Query(ctx, selectWithdrawHistory, login)
 	if err != nil {
 		db.log.Error(err.Error())
 		return nil, err

@@ -10,21 +10,22 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/kartalenka7/project_gophermart/internal/model"
+	"github.com/kartalenka7/project_gophermart/internal/utils"
 	"github.com/sirupsen/logrus"
 )
 
 // интерфейс для взаимодействия с сервисом
-type ServiceIntf interface {
+//go:generate mockery --name ServiceInterface --with-expecter
+type ServiceInterface interface {
 	RgstrUser(ctx context.Context, user model.User) error
 	AuthUser(ctx context.Context, user model.User) error
-	AddUserOrder(ctx context.Context, number string) error
-	GetUserOrders(ctx context.Context) ([]model.OrdersResponse, error)
+	AddUserOrder(ctx context.Context, number string, login string) error
+	GetUserOrders(ctx context.Context, login string) ([]model.OrdersResponse, error)
 	ParseUserCredentials(r *http.Request) (model.User, error)
-	WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw) error
-	GetBalance(ctx context.Context) (model.Balance, error)
-	GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, error)
+	WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw, login string) error
+	GetBalance(ctx context.Context, login string) (model.Balance, error)
+	GetWithdrawals(ctx context.Context, login string) ([]model.OrderWithdraw, error)
 }
 
 func (s server) userRegstr(rw http.ResponseWriter, r *http.Request) {
@@ -48,12 +49,11 @@ func (s server) userRegstr(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	// аутентификация пользователя
-	//Создать новый токен JWT для новой зарегистрированной учётной записи
-	tk := &model.Token{Login: user.Login}
-	token := jwt.NewWithClaims(jwt.GetSigningMethod("HS256"), tk)
-	tokenString, _ := token.SignedString([]byte("secret"))
-
-	rw.Header().Add("Authorization", tokenString)
+	if err = utils.AddAuthoriztionHeader(rw, user); err != nil {
+		s.log.Error(err.Error())
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
 	s.log.Info("Пользователь успешно зарегистрирован и аутентифицирован")
 	rw.WriteHeader(http.StatusOK)
@@ -65,6 +65,8 @@ func (s server) userAuth(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	s.log.WithFields(logrus.Fields{
+		"user": user.Login}).Info("Аутентификация пользователя")
 
 	err = s.service.AuthUser(r.Context(), user)
 	if err != nil {
@@ -78,11 +80,11 @@ func (s server) userAuth(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	// аутентификация пользователя
-	tk := &model.Token{Login: user.Login}
-	token := jwt.NewWithClaims(jwt.GetSigningMethod("HS256"), tk)
-	tokenString, _ := token.SignedString([]byte("secret"))
-
-	rw.Header().Add("Authorization", tokenString)
+	if err = utils.AddAuthoriztionHeader(rw, user); err != nil {
+		s.log.Error(err.Error())
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
 	s.log.Info("Пользователь успешно аутентифицирован")
 	rw.WriteHeader(http.StatusOK)
@@ -108,7 +110,14 @@ func (s server) addOrder(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = s.service.AddUserOrder(r.Context(), number)
+	login, ok := r.Context().Value(model.KeyLogin).(string)
+	if !ok {
+		s.log.Error(model.ErrCastingType)
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	err = s.service.AddUserOrder(r.Context(), number, login)
 	if err != nil {
 		//номер заказа уже был зарегистрирован текущим пользователем
 		if errors.Is(err, model.ErrOrderExistsSameUser) {
@@ -134,7 +143,14 @@ func (s server) addOrder(rw http.ResponseWriter, r *http.Request) {
 
 func (s server) getOrders(rw http.ResponseWriter, r *http.Request) {
 	s.log.Info("Получение списка заказов")
-	orders, err := s.service.GetUserOrders(r.Context())
+
+	login, ok := r.Context().Value(model.KeyLogin).(string)
+	if !ok {
+		s.log.Error(model.ErrCastingType.Error())
+		rw.WriteHeader(http.StatusInternalServerError)
+	}
+
+	orders, err := s.service.GetUserOrders(r.Context(), login)
 	if err != nil {
 		rw.WriteHeader(http.StatusNoContent)
 		return
@@ -178,8 +194,14 @@ func (s server) withdraw(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	login, ok := r.Context().Value(model.KeyLogin).(string)
+	if !ok {
+		s.log.Error(model.ErrCastingType.Error())
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
-	if err := s.service.WriteWithdraw(r.Context(), withdraw); err != nil {
+	if err := s.service.WriteWithdraw(r.Context(), withdraw, login); err != nil {
 		if errors.Is(err, model.ErrNotValidOrderNumber) {
 			//422 — неверный номер заказа;
 			rw.WriteHeader(http.StatusUnprocessableEntity)
@@ -199,7 +221,13 @@ func (s server) withdraw(rw http.ResponseWriter, r *http.Request) {
 
 func (s server) getWithdrawals(rw http.ResponseWriter, r *http.Request) {
 	s.log.Info("Получение информации о выводе средств")
-	withdrawals, err := s.service.GetWithdrawals(r.Context())
+	login, ok := r.Context().Value(model.KeyLogin).(string)
+	if !ok {
+		s.log.Error(model.ErrCastingType.Error())
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	withdrawals, err := s.service.GetWithdrawals(r.Context(), login)
 	if err != nil {
 		if errors.Is(err, model.ErrNoWithdrawals) {
 			rw.WriteHeader(http.StatusNoContent)
@@ -225,7 +253,14 @@ func (s server) getWithdrawals(rw http.ResponseWriter, r *http.Request) {
 func (s server) getBalance(rw http.ResponseWriter, r *http.Request) {
 	s.log.Info("Получение баланса")
 
-	balance, err := s.service.GetBalance(r.Context())
+	login, ok := r.Context().Value(model.KeyLogin).(string)
+	if !ok {
+		s.log.Error(model.ErrCastingType.Error())
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	balance, err := s.service.GetBalance(r.Context(), login)
 	if err != nil {
 		rw.WriteHeader(http.StatusInternalServerError)
 	}

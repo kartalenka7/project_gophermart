@@ -7,20 +7,22 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/kartalenka7/project_gophermart/internal/config"
 	"github.com/kartalenka7/project_gophermart/internal/model"
+	"github.com/kartalenka7/project_gophermart/internal/utils"
 	"github.com/sirupsen/logrus"
 )
 
 // интерфейс взаимодействия с хранилищем
+//go:generate mockery --name Storer --with-expecter
 type Storer interface {
 	AddUser(ctx context.Context, user model.User) error
-	GetUser(ctx context.Context, user model.User) error
-	AddOrder(ctx context.Context, number string) error
-	GetOrders(ctx context.Context) ([]model.OrdersResponse, error)
-	WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw) error
-	GetBalance(ctx context.Context) (model.Balance, error)
-	GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, error)
+	AuthUser(ctx context.Context, user model.User) (string, error)
+	AddOrder(ctx context.Context, number string, login string) error
+	GetOrders(ctx context.Context, login string) ([]model.OrdersResponse, error)
+	WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw, login string) error
+	GetBalance(ctx context.Context, login string) (model.Balance, error)
+	CalculateBalance(ctx context.Context, login string) (int32, error)
+	GetWithdrawals(ctx context.Context, login string) ([]model.OrderWithdraw, error)
 }
 
 type ServiceStruct struct {
@@ -80,45 +82,69 @@ func (s ServiceStruct) RgstrUser(ctx context.Context, user model.User) error {
 
 func (s ServiceStruct) AuthUser(ctx context.Context, user model.User) error {
 
-	err := s.storage.GetUser(ctx, user)
+	checkPassword, err := s.storage.AuthUser(ctx, user)
 	if err != nil {
 		return model.ErrAuthFailed
 	}
-	s.Log.WithFields(logrus.Fields{
-		"user": user.Login}).Info("Аутентификация пользователя")
+
+	// проверить хэш пароля
+	err = bcrypt.CompareHashAndPassword([]byte(checkPassword), []byte(user.Password))
+	if err != nil {
+		s.Log.Error(err.Error())
+		return model.ErrAuthFailed
+	}
 
 	return nil
 }
 
-func (s ServiceStruct) AddUserOrder(ctx context.Context, number string) error {
+func (s ServiceStruct) AddUserOrder(ctx context.Context, number string, login string) error {
 
 	//проверить формат номера заказа
-	if !config.CheckLuhnAlg(number) {
+	if !utils.CheckLuhnAlg(number) {
 		s.Log.Error(model.ErrNotValidOrderNumber.Error())
 		return model.ErrNotValidOrderNumber
 	}
 
-	err := s.storage.AddOrder(ctx, number)
+	err := s.storage.AddOrder(ctx, number, login)
 	return err
 }
 
-func (s ServiceStruct) GetUserOrders(ctx context.Context) ([]model.OrdersResponse, error) {
-	return s.storage.GetOrders(ctx)
+func (s ServiceStruct) GetUserOrders(ctx context.Context, login string) ([]model.OrdersResponse, error) {
+	return s.storage.GetOrders(ctx, login)
 }
 
-func (s ServiceStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw) error {
+func (s ServiceStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw, login string) error {
+	var balanceFloat float64
+
 	//проверить формат номера заказа
-	if !config.CheckLuhnAlg(withdraw.Number) {
+	if !utils.CheckLuhnAlg(withdraw.Number) {
 		s.Log.Error(model.ErrNotValidOrderNumber.Error())
 		return model.ErrNotValidOrderNumber
 	}
-	return s.storage.WriteWithdraw(ctx, withdraw)
+
+	balance, err := s.storage.CalculateBalance(ctx, login)
+	if err != nil {
+		return err
+	}
+
+	// проверяем, что у пользователя достаточно баллов для списания
+	balanceFloat = float64(balance)
+	// переводим обратно в рубли
+	balanceFloat = balanceFloat / 100
+
+	if balanceFloat < float64(withdraw.Withdraw) {
+		s.Log.Error(model.ErrInsufficientBalance.Error())
+		return model.ErrInsufficientBalance
+	}
+	withdraw.Withdraw = -withdraw.Withdraw * 100
+
+	return s.storage.WriteWithdraw(ctx, withdraw, login)
 }
 
-func (s ServiceStruct) GetBalance(ctx context.Context) (model.Balance, error) {
-	return s.storage.GetBalance(ctx)
+func (s ServiceStruct) GetBalance(ctx context.Context, login string) (model.Balance, error) {
+	return s.storage.GetBalance(ctx, login)
 }
 
-func (s ServiceStruct) GetWithdrawals(ctx context.Context) ([]model.OrderWithdraw, error) {
-	return s.storage.GetWithdrawals(ctx)
+func (s ServiceStruct) GetWithdrawals(ctx context.Context, login string) ([]model.OrderWithdraw, error) {
+	return s.storage.GetWithdrawals(ctx, login)
 }

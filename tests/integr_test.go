@@ -2,6 +2,7 @@ package test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,9 +10,11 @@ import (
 
 	"github.com/kartalenka7/project_gophermart/internal/config"
 	"github.com/kartalenka7/project_gophermart/internal/handlers"
+	"github.com/kartalenka7/project_gophermart/internal/logger"
 	"github.com/kartalenka7/project_gophermart/internal/model"
 	"github.com/kartalenka7/project_gophermart/internal/service"
 	"github.com/kartalenka7/project_gophermart/internal/storage"
+	"github.com/kartalenka7/project_gophermart/tests/mocks"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,6 +23,7 @@ import (
 func TestUserRegstr(t *testing.T) {
 	type want struct {
 		statusCode int
+		wantErr    error
 	}
 
 	tests := []struct {
@@ -28,6 +32,7 @@ func TestUserRegstr(t *testing.T) {
 		request string
 		user    model.User
 		want    want
+		storage *mocks.Storer
 	}{
 		{
 			name:    "User registration test",
@@ -39,7 +44,9 @@ func TestUserRegstr(t *testing.T) {
 			},
 			want: want{
 				statusCode: http.StatusOK,
+				wantErr:    nil,
 			},
+			storage: mocks.NewStorer(t),
 		},
 		{
 			name:    "Login already exists registration test",
@@ -51,11 +58,13 @@ func TestUserRegstr(t *testing.T) {
 			},
 			want: want{
 				statusCode: http.StatusConflict,
+				wantErr:    model.ErrLoginExists,
 			},
+			storage: mocks.NewStorer(t),
 		},
 	}
 
-	log := config.InitLog()
+	log := logger.InitLog()
 	cfg, err := config.GetConfig(log)
 	require.NoError(t, err)
 	storage, err := storage.NewStorage(cfg.Database, cfg.AccrualSys, log)
@@ -83,6 +92,7 @@ func TestUserRegstr(t *testing.T) {
 
 			// настраиваем клиента и куки
 			client := new(http.Client)
+			tt.storage.EXPECT().AddUser(context.Background(), tt.user).Return(tt.want.wantErr)
 			resp, err := client.Do(request)
 			resp.Body.Close()
 
@@ -131,7 +141,7 @@ func TestOrders(t *testing.T) {
 		},
 	}
 
-	log := config.InitLog()
+	log := logger.InitLog()
 	cfg, err := config.GetConfig(log)
 	require.NoError(t, err)
 	storage, err := storage.NewStorage(cfg.Database, cfg.AccrualSys, log)
