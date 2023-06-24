@@ -202,7 +202,20 @@ func (s ServiceStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWi
 }
 
 func (s ServiceStruct) GetBalance(ctx context.Context, login string) (model.Balance, error) {
-	return s.storage.GetBalance(ctx, login)
+	balance, err := s.storage.GetBalance(ctx, login)
+	if err != nil {
+		return model.Balance{}, err
+	}
+
+	balance.Balance = balance.Balance / 100
+	balance.Withdrawn = balance.Withdrawn / 100
+
+	balance.Balance = utils.Round(balance.Balance, 2)
+	balance.Withdrawn = utils.Round(-balance.Withdrawn, 2)
+
+	s.Log.WithFields(logrus.Fields{"balance": balance}).Info("Баланс с округлением")
+
+	return balance, err
 }
 
 func (s ServiceStruct) GetWithdrawals(ctx context.Context, login string) ([]model.OrderWithdraw, error) {

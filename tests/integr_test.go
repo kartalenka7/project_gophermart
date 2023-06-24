@@ -15,7 +15,6 @@ import (
 	"github.com/kartalenka7/project_gophermart/internal/model"
 	"github.com/kartalenka7/project_gophermart/internal/service"
 	"github.com/kartalenka7/project_gophermart/internal/storage"
-	"github.com/kartalenka7/project_gophermart/tests/mocks"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,7 +32,6 @@ func TestUserRegstr(t *testing.T) {
 		request string
 		user    model.User
 		want    want
-		storage *mocks.Storer
 	}{
 		{
 			name:    "User registration test",
@@ -47,7 +45,6 @@ func TestUserRegstr(t *testing.T) {
 				statusCode: http.StatusOK,
 				wantErr:    nil,
 			},
-			storage: mocks.NewStorer(t),
 		},
 		{
 			name:    "Login already exists registration test",
@@ -61,7 +58,6 @@ func TestUserRegstr(t *testing.T) {
 				statusCode: http.StatusConflict,
 				wantErr:    model.ErrLoginExists,
 			},
-			storage: mocks.NewStorer(t),
 		},
 	}
 
@@ -95,7 +91,7 @@ func TestUserRegstr(t *testing.T) {
 
 			// настраиваем клиента и куки
 			client := new(http.Client)
-			tt.storage.EXPECT().AddUser(context.Background(), tt.user).Return(tt.want.wantErr)
+
 			resp, err := client.Do(request)
 			resp.Body.Close()
 

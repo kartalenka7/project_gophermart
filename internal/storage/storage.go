@@ -13,7 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/kartalenka7/project_gophermart/internal/model"
-	"github.com/kartalenka7/project_gophermart/internal/utils"
 )
 
 var (
@@ -343,20 +342,17 @@ func (db *DBStruct) GetBalance(ctx context.Context, login string) (model.Balance
 		}
 		withdrawFloat = float64(withdraw)
 		db.log.WithFields(logrus.Fields{"withdraw": withdraw}).Info("Баланс")
-		balance.Balance += withdrawFloat / 100
+		balance.Balance += withdrawFloat
 		if withdrawFloat < 0 {
-			balance.Withdrawn += withdrawFloat / 100
+			balance.Withdrawn += withdrawFloat
 		}
 	}
 
-	balance.Balance = utils.Round(balance.Balance, 2)
-	balance.Withdrawn = utils.Round(-balance.Withdrawn, 2)
 	if rows.Err() != nil {
 		db.log.Error(rows.Err().Error())
 		return model.Balance{}, rows.Err()
 	}
 
-	db.log.WithFields(logrus.Fields{"balance": balance}).Info("Баланс")
 	return balance, nil
 }
 
