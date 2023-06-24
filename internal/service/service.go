@@ -22,7 +22,6 @@ type Storer interface {
 	GetOrders(ctx context.Context, login string) ([]model.OrdersResponse, error)
 	WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw, login string) error
 	GetBalance(ctx context.Context, login string) (model.Balance, error)
-	CalculateBalance(ctx context.Context, login string) (int32, error)
 	GetWithdrawals(ctx context.Context, login string) ([]model.OrderWithdraw, error)
 	GetOrdersForUpdate(ctx context.Context) ([]string, error)
 	UpdateOrders(ctx context.Context, accrualSysResponse []model.PointsAppResponse)
@@ -182,16 +181,15 @@ func (s ServiceStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWi
 		return model.ErrNotValidOrderNumber
 	}
 
-	balance, err := s.storage.CalculateBalance(ctx, login)
+	balance, err := s.storage.GetBalance(ctx, login)
 	if err != nil {
 		return err
 	}
 
-	// проверяем, что у пользователя достаточно баллов для списания
-	balanceFloat = float64(balance)
 	// переводим обратно в рубли
-	balanceFloat = balanceFloat / 100
+	balanceFloat = balance.Balance / 100
 
+	// проверяем, что у пользователя достаточно баллов для списания
 	if balanceFloat < float64(withdraw.Withdraw) {
 		s.Log.Error(model.ErrInsufficientBalance.Error())
 		return model.ErrInsufficientBalance

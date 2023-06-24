@@ -223,33 +223,6 @@ func (db *DBStruct) GetOrders(ctx context.Context, login string) ([]model.Orders
 	return orders, nil
 }
 
-func (db *DBStruct) CalculateBalance(ctx context.Context, login string) (int32, error) {
-	var balance int32
-	var balanceAll int32
-
-	// определяем баланс пользователя
-	rows, err := db.pgxPool.Query(ctx, selectUserHistory, login)
-	if err != nil {
-		db.log.Error(err.Error())
-		return 0, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		err = rows.Scan(&balance)
-		if err != nil {
-			db.log.Error(err.Error())
-			return 0, err
-		}
-		db.log.WithFields(logrus.Fields{"balance": balance}).Info("Накапливаем баланс")
-		balanceAll += balance
-	}
-	if rows.Err() != nil {
-		db.log.Error(rows.Err().Error())
-		return 0, rows.Err()
-	}
-	return balance, nil
-}
-
 func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithdraw, login string) error {
 	db.log.WithFields(logrus.Fields{
 		"number":   withdraw.Number,
