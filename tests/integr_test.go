@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/kartalenka7/project_gophermart/internal/config"
 	"github.com/kartalenka7/project_gophermart/internal/handlers"
@@ -67,9 +68,11 @@ func TestUserRegstr(t *testing.T) {
 	log := logger.InitLog()
 	cfg, err := config.GetConfig(log)
 	require.NoError(t, err)
-	storage, err := storage.NewStorage(cfg.Database, cfg.AccrualSys, log)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	storage, err := storage.NewStorage(ctx, cfg.Database, log)
 	require.NoError(t, err)
-	service := service.NewService(storage, log)
+	service := service.NewService(ctx, storage, log, cfg.AccrualSys)
 	router := handlers.NewRouter(service, log)
 
 	for _, tt := range tests {
@@ -144,9 +147,11 @@ func TestOrders(t *testing.T) {
 	log := logger.InitLog()
 	cfg, err := config.GetConfig(log)
 	require.NoError(t, err)
-	storage, err := storage.NewStorage(cfg.Database, cfg.AccrualSys, log)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	storage, err := storage.NewStorage(ctx, cfg.Database, log)
 	require.NoError(t, err)
-	service := service.NewService(storage, log)
+	service := service.NewService(ctx, storage, log, cfg.AccrualSys)
 	router := handlers.NewRouter(service, log)
 
 	for _, tt := range tests {

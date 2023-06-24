@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -23,6 +24,8 @@ type Storer interface {
 	GetBalance(ctx context.Context, login string) (model.Balance, error)
 	CalculateBalance(ctx context.Context, login string) (int32, error)
 	GetWithdrawals(ctx context.Context, login string) ([]model.OrderWithdraw, error)
+	GetOrdersForUpdate(ctx context.Context) ([]string, error)
+	UpdateOrders(ctx context.Context, accrualSysResponse []model.PointsAppResponse)
 }
 
 type ServiceStruct struct {
@@ -30,11 +33,68 @@ type ServiceStruct struct {
 	Log     *logrus.Logger
 }
 
-func NewService(storage Storer, log *logrus.Logger) *ServiceStruct {
+func NewService(ctx context.Context, storage Storer, log *logrus.Logger, accrualSys string) *ServiceStruct {
+	var service *ServiceStruct
 	log.Info("Инициализируем сервис")
-	return &ServiceStruct{
+	service = &ServiceStruct{
 		storage: storage,
 		Log:     log,
+	}
+	log.Info("Запускаем горутину для взаимодейтсвия с системой расчета баллов лояльности")
+	go service.GetUpdatesFromAccrualSystem(ctx, accrualSys)
+	return service
+}
+
+// взаимодействие с системой расчета начислений баллов лояльности
+func (s ServiceStruct) GetUpdatesFromAccrualSystem(ctx context.Context, accrualSys string) {
+	var allResp []model.PointsAppResponse
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			orderNumbers, err := s.storage.GetOrdersForUpdate(ctx)
+			if err != nil {
+				continue
+			}
+
+			pointsResp := model.PointsAppResponse{}
+			client := &http.Client{}
+			for _, v := range orderNumbers {
+				url := accrualSys + "/api/orders/" + v
+
+				s.Log.Info("http запрос в систему начислений баллов лояльности")
+				request, err := http.NewRequest(http.MethodGet, url, nil)
+				if err != nil {
+					s.Log.Error(err.Error())
+					continue
+				}
+				request.Header.Add("Content-Length", "0")
+				resp, err := client.Do(request)
+				if err != nil {
+					s.Log.Error(err.Error())
+					continue
+				}
+				s.Log.WithFields(logrus.Fields{"status-code": resp.StatusCode}).Info("Статус ответа")
+				decoder := json.NewDecoder(resp.Body)
+				if err = decoder.Decode(&pointsResp); err != nil {
+					s.Log.Error(err.Error())
+					continue
+				}
+				allResp = append(allResp, pointsResp)
+				resp.Body.Close()
+			}
+
+			if allResp == nil {
+				continue
+			}
+			s.storage.UpdateOrders(ctx, allResp)
+		case <-ctx.Done():
+			s.Log.Error("Отмена контекста")
+			return
+		}
 	}
 }
 

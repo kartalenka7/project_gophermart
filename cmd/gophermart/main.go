@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/kartalenka7/project_gophermart/internal/config"
 	"github.com/kartalenka7/project_gophermart/internal/handlers"
@@ -18,11 +20,15 @@ func main() {
 		log.Error(err.Error())
 		return
 	}
-	storage, err := storage.NewStorage(cfg.Database, cfg.AccrualSys, log)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	time.AfterFunc(60*time.Second, cancel)
+
+	storage, err := storage.NewStorage(ctx, cfg.Database, log)
 	if err != nil {
 		return
 	}
-	service := service.NewService(storage, log)
+	service := service.NewService(ctx, storage, log, cfg.AccrualSys)
 	router := handlers.NewRouter(service, log)
 
 	err = http.ListenAndServe(cfg.Server, router)

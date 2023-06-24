@@ -2,9 +2,7 @@ package storage
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"net/http"
 	"sort"
 	"time"
 
@@ -65,12 +63,9 @@ type DBStruct struct {
 	log     *logrus.Logger
 }
 
-func NewStorage(connString string, accrualSys string, log *logrus.Logger) (*DBStruct, error) {
+func NewStorage(ctx context.Context, connString string, log *logrus.Logger) (*DBStruct, error) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	time.AfterFunc(60*time.Second, cancel)
-
-	pgxPool, err := InitConnection(ctx, connString, accrualSys, log)
+	pgxPool, err := InitConnection(ctx, connString, log)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +75,7 @@ func NewStorage(connString string, accrualSys string, log *logrus.Logger) (*DBSt
 	}, nil
 }
 
-func InitConnection(ctx context.Context, connString string, accrualSys string, log *logrus.Logger) (*pgxpool.Pool, error) {
+func InitConnection(ctx context.Context, connString string, log *logrus.Logger) (*pgxpool.Pool, error) {
 
 	log.Info("Инициализируем пул соединений с Postgres, создаем таблицы")
 	pgxPool, err := pgxpool.Connect(ctx, connString)
@@ -105,8 +100,6 @@ func InitConnection(ctx context.Context, connString string, accrualSys string, l
 		return nil, err
 	}
 
-	log.Info("Запускаем горутину для взаимодейтсвия с системой расчета баллов лояльности")
-	go updateOrders(ctx, pgxPool, accrualSys, log)
 	return pgxPool, nil
 }
 
@@ -280,91 +273,55 @@ func (db *DBStruct) WriteWithdraw(ctx context.Context, withdraw model.OrderWithd
 	return nil
 }
 
-// взаимодействие с системой расчета начислений баллов лояльности
-func updateOrders(ctx context.Context, pgxPool *pgxpool.Pool, accrualSys string, log *logrus.Logger) {
-	var allResp []model.PointsAppResponse
+func (db *DBStruct) GetOrdersForUpdate(ctx context.Context) ([]string, error) {
 	var orderNumber string
 	var orderNumbers []string
-	var accrual int32
 
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// выбрать заказы, у которых не окончательный статус
-			rows, err := pgxPool.Query(ctx, selectProcessingOrders, "INVALID", "PROCESSED")
-			if err != nil {
-				log.Error(err.Error())
-				continue
-			}
-
-			orderNumbers = orderNumbers[:0]
-			for rows.Next() {
-				err := rows.Scan(&orderNumber)
-				if err != nil {
-					log.Error(err.Error())
-					continue
-				}
-				log.WithFields(logrus.Fields{"orderNumber": orderNumber}).Info("Выбран заказ для запроса статуса")
-				orderNumbers = append(orderNumbers, orderNumber)
-			}
-
-			pointsResp := model.PointsAppResponse{}
-			client := &http.Client{}
-			for _, v := range orderNumbers {
-				url := accrualSys + "/api/orders/" + v
-
-				log.Info("http запрос в систему начислений баллов лояльности")
-				request, err := http.NewRequest(http.MethodGet, url, nil)
-				if err != nil {
-					log.Error(err.Error())
-					continue
-				}
-				request.Header.Add("Content-Length", "0")
-				resp, err := client.Do(request)
-				if err != nil {
-					log.Error(err.Error())
-					continue
-				}
-				log.WithFields(logrus.Fields{"status-code": resp.StatusCode}).Info("Статус ответа")
-				decoder := json.NewDecoder(resp.Body)
-				if err = decoder.Decode(&pointsResp); err != nil {
-					log.Error(err.Error())
-					continue
-				}
-				allResp = append(allResp, pointsResp)
-				resp.Body.Close()
-			}
-
-			if allResp == nil {
-				continue
-			}
-			// обновить статусы и баллы полученных в ответе заказов
-			batch := &pgx.Batch{}
-			for _, response := range allResp {
-				// переводим в копейки
-				accrual = int32(response.Accrual * 100)
-				batch.Queue(updateOrdersStatus, response.Status, accrual, response.Number)
-				batch.Queue(addOrderHistory, response.Number, accrual, time.Now().Format(time.RFC3339))
-				log.WithFields(logrus.Fields{
-					"number":  response.Number,
-					"status":  response.Status,
-					"accrual": accrual,
-				}).Info("Обновление заказа")
-			}
-			batchReq := pgxPool.SendBatch(ctx, batch)
-			_, err = batchReq.Exec()
-			if err != nil {
-				log.Error(err.Error())
-			}
-			batchReq.Close()
-		case <-ctx.Done():
-			log.Error("Отмена контекста")
-			return
-		}
+	// выбрать заказы, у которых не окончательный статус
+	rows, err := db.pgxPool.Query(ctx, selectProcessingOrders, "INVALID", "PROCESSED")
+	if err != nil {
+		db.log.Error(err.Error())
+		return nil, err
 	}
+
+	for rows.Next() {
+		err := rows.Scan(&orderNumber)
+		if err != nil {
+			db.log.Error(err.Error())
+			continue
+		}
+		db.log.WithFields(logrus.Fields{"orderNumber": orderNumber}).Info("Выбран заказ для запроса статуса")
+		orderNumbers = append(orderNumbers, orderNumber)
+	}
+
+	if rows.Err() != nil {
+		db.log.Error(rows.Err().Error())
+		return nil, rows.Err()
+	}
+	return orderNumbers, nil
+}
+
+func (db *DBStruct) UpdateOrders(ctx context.Context, accrualSysResponse []model.PointsAppResponse) {
+	var accrual int32
+	// обновить статусы и баллы полученных в ответе заказов
+	batch := &pgx.Batch{}
+	for _, response := range accrualSysResponse {
+		// переводим в копейки
+		accrual = int32(response.Accrual * 100)
+		batch.Queue(updateOrdersStatus, response.Status, accrual, response.Number)
+		batch.Queue(addOrderHistory, response.Number, accrual, time.Now().Format(time.RFC3339))
+		db.log.WithFields(logrus.Fields{
+			"number":  response.Number,
+			"status":  response.Status,
+			"accrual": accrual,
+		}).Info("Обновление заказа")
+	}
+	batchReq := db.pgxPool.SendBatch(ctx, batch)
+	_, err := batchReq.Exec()
+	if err != nil {
+		db.log.Error(err.Error())
+	}
+	batchReq.Close()
 }
 
 func (db *DBStruct) GetBalance(ctx context.Context, login string) (model.Balance, error) {
