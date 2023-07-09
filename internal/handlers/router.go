@@ -12,10 +12,11 @@ type server struct {
 
 func NewRouter(service ServiceInterface, log *logrus.Logger) chi.Router {
 	log.Info("Инициализируем роутер")
-	router := chi.NewRouter()
 	server := &server{
 		service: service,
 		log:     log}
+
+	router := chi.NewRouter()
 
 	// маршрутизация запросов
 	router.Route("/api/user", func(r chi.Router) {
@@ -24,24 +25,14 @@ func NewRouter(service ServiceInterface, log *logrus.Logger) chi.Router {
 		r.Post("/login", server.userAuth)
 	})
 
-	router.Route("/api/user/orders", func(r chi.Router) {
+	router.Group(func(r chi.Router) {
 		r.Use(gzipHandle)
 		r.Use(server.checkUserAuth)
-		r.Post("/", server.addOrder)
-		r.Get("/", server.getOrders)
-	})
-
-	router.Route("/api/user/balance", func(r chi.Router) {
-		r.Use(gzipHandle)
-		r.Use(server.checkUserAuth)
-		r.Get("/", server.getBalance)
-		r.Post("/withdraw", server.withdraw)
-	})
-
-	router.Route("/api/user/withdrawals", func(r chi.Router) {
-		r.Use(gzipHandle)
-		r.Use(server.checkUserAuth)
-		r.Get("/", server.getWithdrawals)
+		r.Post("/api/user/orders", server.addOrder)
+		r.Get("/api/user/orders", server.getOrders)
+		r.Get("/api/user/balance", server.getBalance)
+		r.Post("/api/user/balance/withdraw", server.withdraw)
+		r.Get("/api/user/withdrawals", server.getWithdrawals)
 	})
 
 	return router

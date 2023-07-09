@@ -22,7 +22,7 @@ func main() {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	time.AfterFunc(60*time.Second, cancel)
+	defer cancel()
 
 	storage, err := storage.NewStorage(ctx, cfg.Database, log)
 	if err != nil {
