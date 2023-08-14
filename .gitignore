@@ -21,3 +21,7 @@ vendor/
 # IDEs directories
 .idea
 .vscode
+
+#log files
+cmd/gophermart/logrus.log
+tests/logrus.log
