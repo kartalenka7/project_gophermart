@@ -29,7 +29,7 @@ type OrdersResponse struct {
 type PointsAppResponse struct {
 	Number  string  `json:"order"`
 	Status  string  `json:"status"`
-	Accrual float64 `json:"accrual"` //кол-во баллов, начисленное за заказ
+	Accrual float64 `json:"accrual"`
 }
 
 type OrderWithdraw struct {

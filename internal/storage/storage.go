@@ -79,7 +79,7 @@ func InitConnection(ctx context.Context, connString string, log *logrus.Logger) 
 	log.Info("Инициализируем пул соединений с Postgres, создаем таблицы")
 	pgxPool, err := pgxpool.Connect(ctx, connString)
 	if err != nil {
-		log.Error(err.Error())
+		log.Fatal(err.Error())
 		return nil, err
 	}
 
